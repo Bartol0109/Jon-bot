@@ -29,9 +29,36 @@ DB_PATH = DATA_DIR / "seen_jobs.sqlite3"
 MAX_AGE_HOURS = int(env("MAX_AGE_HOURS", "48" if PERSISTENT else "26"))
 MAX_RESULTS = int(env("MAX_RESULTS", "8"))
 
+# Uloge za keyword filter. Prazan ROLE_KEYWORDS = ovaj popis. Vlastita vrijednost
+# (zarezom odvojene fraze) ga zamjenjuje. Kratke oznake (qa, bi, ai) dobiju granicu riječi.
+DEFAULT_ROLE_KEYWORDS = [
+    "developer", "develop", "programer", "programmer", "programiranje", "software",
+    "engineer", "inženjer", "inzenjer", "frontend", "front-end", "backend", "back-end",
+    "fullstack", "full-stack", "full stack",
+    "python", "java", "javascript", "typescript", "react", "node", ".net", "c#", "c++",
+    "php", "golang", "rust", "kotlin", "swift", "android", "ios", "coding", "razvoj",
+    "informatika", "informatičar", "informaticar", "machine learning", "ml", "ai",
+    "data analyst", "data engineer", "data science", "data scientist", "analytics",
+    "analitičar", "analiticar", "poslovni analitičar", "poslovni analiticar",
+    "business analyst", "bi analyst", "bi", "business intelligence",
+    "qa", "tester", "testing", "quality assurance", "test engineer", "software tester",
+    "osiguranje kvalitete", "ispitivač", "ispitivac",
+    "it support", "technical support", "tech support", "tehnička podrška", "tehnicka podrska",
+    "podrška", "podrska", "helpdesk", "help desk", "help-desk", "service desk",
+    "support engineer", "application support", "app support", "podrška aplikacijama",
+    "desktop support", "korisnička podrška", "korisnicka podrska",
+    "customer success engineer", "technical success",
+    "devops", "sysadmin", "sys admin", "system administrator", "systems administrator",
+    "sistemski administrator", "administrator sustava", "sistem administrator",
+]
+_role_raw = env("ROLE_KEYWORDS", "")
+ROLE_KEYWORDS = [p.strip() for p in _role_raw.split(",") if p.strip()] or list(DEFAULT_ROLE_KEYWORDS)
+
 JOB_CRITERIA = env(
     "JOB_CRITERIA",
-    "Student bez iskustva, programerski poslovi (junior, praksa, studentski posao), remote ili u Hrvatskoj",
+    "Student bez iskustva. Početne uloge: programiranje, data/business/BI analitičar, QA i testiranje, "
+    "IT i tehnička podrška, helpdesk, application support, technical ili customer success engineer, "
+    "junior DevOps ili sysadmin. Remote ili u Hrvatskoj. Bez senior/lead/manager razine i bez višegodišnjeg iskustva.",
 )
 
 LLM_API_KEY = env("LLM_API_KEY")

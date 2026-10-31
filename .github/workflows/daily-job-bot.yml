@@ -71,6 +71,7 @@ jobs:
       LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
       LLM_MODEL: ${{ vars.LLM_MODEL }}
       JOB_CRITERIA: ${{ vars.JOB_CRITERIA }}
+      ROLE_KEYWORDS: ${{ vars.ROLE_KEYWORDS }}
       MAX_RESULTS: ${{ vars.MAX_RESULTS }}
       MAX_AGE_HOURS: ${{ vars.MAX_AGE_HOURS }}
       DISABLED_SOURCES: ${{ vars.DISABLED_SOURCES }}

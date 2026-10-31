@@ -1,9 +1,11 @@
-# 💼 Job bot – dnevni programerski oglasi za studente (WhatsApp / Telegram)
+# 💼 Job bot – dnevni tehnološki oglasi za studente (WhatsApp / Telegram)
 
 Mala Python aplikacija koja **svaki dan u 12:00 (Europe/Zagreb)**:
 
-1. skupi svježe oglase (zadnjih ~24–48 h) za programerske poslove pogodne za studente / osobe bez iskustva
-   (junior, praksa, internship, trainee, studentski posao…) – **remote bilo gdje** + **Hrvatska (svi gradovi)**,
+1. skupi svježe oglase (zadnjih ~24–48 h) za početne tehnološke uloge pogodne za studente / osobe bez iskustva
+   (programiranje, data/business/BI analitičar, QA i testiranje, IT i tehnička podrška, helpdesk,
+   application support, technical/customer success engineer, junior DevOps ili sysadmin;
+   i hrvatski termini: analitičar, podrška, tehnička podrška…) – **remote bilo gdje** + **Hrvatska (svi gradovi)**,
 2. makne duplikate i oglase koji su već poslani,
 3. (opcionalno) AI-jem (xAI Grok ili OpenAI) ocijeni oglase prema tvojim kriterijima i odabere 5–10 najboljih,
    s kratkim obrazloženjem na hrvatskom – bez API ključa koristi filter po ključnim riječima,
@@ -17,14 +19,14 @@ Radi samostalno kao besplatni zakazani workflow na GitHub Actionsu (svaki dan u 
 
 | Izvor | Tip | Opseg | Napomena |
 |---|---|---|---|
-| Remotive | službeni JSON API | remote | kategorija software-dev; besplatni API kasni ~24 h |
-| RemoteOK | službeni JSON API | remote | |
+| Remotive | službeni JSON API | remote | kategorije software-dev, customer-support, devops, qa; besplatni feed je mali i zna ignorirati kategoriju |
+| RemoteOK | službeni JSON API | remote | cijeli feed, pa ga suzi filter uloga |
 | Arbeitnow | službeni JSON API | remote (+ HR ako ima) | uzimaju se samo remote oglasi (većina je Njemačka) |
-| Jobicy | službeni JSON API | remote | tagovi developer/junior/intern |
-| Himalayas | službeni JSON API | remote | filter „Entry-level“; mnogi su ograničeni na SAD → automatski se izbace |
-| We Work Remotely | RSS | remote | kategorija programming |
-| Posao.hr | službeni RSS | Hrvatska | djelatnost „Informatika i telekomunikacije“ |
-| MojPosao.hr | JSON koji koristi njihova web stranica | Hrvatska | nije službeni API – može se promijeniti bez najave |
+| Jobicy | službeni JSON API | remote | tagovi developer, junior, intern, data, analyst, devops, support |
+| Himalayas | službeni JSON API | remote | „Entry-level“ + upiti developer, data/business analyst, QA, IT support, helpdesk, devops; SAD-only se izbace |
+| We Work Remotely | RSS | remote | programming, devops/sysadmin i customer support |
+| Posao.hr | službeni RSS | Hrvatska | djelatnost „Informatika i telekomunikacije“ (pokriva i podršku i analitiku) |
+| MojPosao.hr | JSON koji koristi njihova web stranica | Hrvatska | upiti: programiranje, analitičar, QA, tehnička podrška, helpdesk, devops; nije službeni API |
 
 Svaki izvor je izoliran: ako jedan padne, ostali normalno rade (u logu piše koji je pao).
 Izvor isključiš s `DISABLED_SOURCES=himalayas,arbeitnow`.
@@ -101,8 +103,10 @@ više dijelova (~900 znakova) s pauzom od 6 s između njih.
 
 ## 3. AI rangiranje (opcionalno)
 
-Bez `LLM_API_KEY` bot koristi filter po ključnim riječima (junior/intern/praksa/student…, izbacuje senior/lead/
-„5+ years“). S ključem AI ocijeni do 80 kandidata prema `JOB_CRITERIA` i napiše razlog za svaki.
+Bez `LLM_API_KEY` bot koristi filter po ključnim riječima. Uloge su u `ROLE_KEYWORDS`
+(programiranje, analitičar, QA, IT/tehnička podrška, helpdesk, DevOps/sysadmin…; prazno = ugrađeni popis).
+Junior/intern/praksa i dalje idu naprijed, a senior/lead/manager i „5+ years“ ispadaju.
+S ključem AI ocijeni do 80 kandidata prema `JOB_CRITERIA` i napiše razlog za svaki.
 
 **xAI (Grok)** – zadano:
 1. https://console.x.ai → prijava → *API Keys* → *Create API key*. (Treba dodati malo kredita; jedan dnevni run je
@@ -115,7 +119,8 @@ Bez `LLM_API_KEY` bot koristi filter po ključnim riječima (junior/intern/praks
 2. `LLM_API_KEY=sk-...`, `LLM_BASE_URL=https://api.openai.com/v1`, `LLM_MODEL=gpt-4o-mini` (ili noviji jeftini model).
 
 Kriterije mijenjaš u `JOB_CRITERIA`, npr.
-`Student 2. godine FER-a, Python/JavaScript, praksa ili studentski posao, remote ili Zagreb, bez iskustva`.
+`Student 2. godine FER-a, Python ili data analyst, praksa ili studentski posao, remote ili Zagreb, bez iskustva`.
+Uloge za filter (ne AI tekst) mijenjaš s `ROLE_KEYWORDS=data analyst, qa, helpdesk, devops` – to **zamjenjuje** ugrađeni popis.
 
 ---
 
@@ -166,7 +171,8 @@ Isti ekran → kartica **Variables** → **New repository variable**. Ako varija
 | `SENDER` | `telegram` |
 | `LLM_BASE_URL` | `https://api.x.ai/v1` |
 | `LLM_MODEL` | `grok-4.20-non-reasoning` |
-| `JOB_CRITERIA` | ugrađeni tekst (student / junior / remote ili Hrvatska) |
+| `JOB_CRITERIA` | ugrađeni tekst (početne tech uloge, remote ili Hrvatska, bez seniora) |
+| `ROLE_KEYWORDS` | ugrađeni popis uloga (vidi odjeljak 3) |
 | `MAX_RESULTS` | `8` |
 | `MAX_AGE_HOURS` | `48` (cache se računa kao trajna pohrana) |
 | `DISABLED_SOURCES` | ništa (npr. `himalayas,arbeitnow`) |
@@ -284,7 +290,8 @@ Troši više resursa od crona, pa je cron preporučen.
 | `LLM_API_KEY` | – | bez njega: keyword filter |
 | `LLM_BASE_URL` | `https://api.x.ai/v1` | bilo koji OpenAI-kompatibilni API |
 | `LLM_MODEL` | `grok-4.20-non-reasoning` | |
-| `JOB_CRITERIA` | Student bez iskustva, … | tekst kriterija za AI |
+| `JOB_CRITERIA` | Student bez iskustva, početne tech uloge, … | tekst kriterija za AI |
+| `ROLE_KEYWORDS` | ugrađeni popis | zarezom odvojene uloge; prazno = zadano. Senior i dalje ispada |
 | `MAX_RESULTS` | `8` | max oglasa po danu |
 | `RUN_MODE` | `cron` | `cron` / `scheduler` |
 | `RUN_AT` | `12:00` | vrijeme za scheduler mod |
@@ -310,8 +317,9 @@ jobbot/store.py                  SQLite pamćenje poslanih oglasa
 ## Poznata ograničenja
 - Svježih oglasa „za početnike“ zna biti malo (posebno vikendom) – tada stigne poruka *„Danas nema novih oglasa…“*.
 - GitHub Actions cache nije pravi disk: ako ga GitHub obriše, sljedeći run može ponoviti oglase iz zadnjih 48 h. Zakazani workflow radi samo na `main`. U javnom repou GitHub ugasi schedule nakon 60 dana bez aktivnosti (vidi odjeljak 4.5).
-- Keyword filter je grub: ako nema dovoljno jasnih junior oglasa, dopuni ih ne-senior oglasima bez traženih godina
-  iskustva (označeno s „provjeri uvjete“). AI način je puno precizniji.
+- Keyword filter je grub: pokriva i analitiku, QA, podršku i DevOps, pa ponekad propusti srodan oglas
+  (npr. općenita „podrška“). Ako nema dovoljno jasnih junior oglasa, dopuni ih ne-senior oglasima bez traženih
+  godina iskustva (označeno s „provjeri uvjete“). Senior/lead/manager i dalje ispadaju. AI način je precizniji.
 - MojPosao.hr koristi nedokumentirani endpoint; ako se promijeni, izvor se samo preskoči (vidi log).
 - Remote oglasi ograničeni na druge države (npr. „United States“) se izbacuju; „Remote“ oglasi s Arbeitnowa
   često traže njemački ili boravak u DE/CH – AI ih ocjenjuje niže.

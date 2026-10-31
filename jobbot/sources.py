@@ -15,12 +15,29 @@ UA = {"User-Agent": "Mozilla/5.0 (compatible; job-bot/1.0; personal use)",
       "Accept": "application/json, text/html, application/rss+xml;q=0.9, */*;q=0.8"}
 TIMEOUT = 25
 
-DEV_QUERIES_REMOTE = ["junior developer", "intern software", "entry level developer"]
+# Besplatni Remotive feed trenutno često ignorira category i vrati mali mješoviti skup.
+# Više kategorija ostaje da, kad API opet filtrira, uđu i podrška / DevOps / QA.
+REMOTIVE_CATEGORIES = ("software-dev", "customer-support", "devops", "qa")
+JOBICY_TAGS = ("developer", "junior", "intern", "data", "analyst", "devops", "support")
+HIMALAYAS_QUERIES = (
+    "developer", "software engineer", "intern",
+    "data analyst", "business analyst", "qa", "it support",
+    "technical support", "helpdesk", "devops",
+)
+WWR_FEEDS = (
+    "remote-programming-jobs",
+    "remote-devops-sysadmin-jobs",
+    "remote-customer-support-jobs",
+)
 # Hrvatski portali objavljuju i poslove u inozemstvu – njih preskačemo (osim ako su remote)
 FOREIGN_RE = re.compile(r"inozem|njemačk|austrij|turska|irsk|sloven|švicarsk|nizozem|belgij|franc|ital|"
                         r"švedsk|norvešk|dansk|češk|slovačk|mađarsk|poljsk|bosn|bih|srbij|crna gora|"
                         r"makedonij|ujedinjen|uk\b|usa|sad\b|kanad|dubai|uae|katar|malta|cipar", re.I)
-HR_QUERIES = ["developer", "programer", "software", "junior", "praksa", "student", "frontend", "backend"]
+HR_QUERIES = [
+    "developer", "programer", "software", "junior", "praksa", "student", "frontend", "backend",
+    "analitičar", "data analyst", "business analyst", "tester", "qa",
+    "tehnička podrška", "helpdesk", "devops", "sistemski administrator",
+]
 
 
 def _get(url, **kw):
@@ -54,12 +71,22 @@ def _dt_epoch(v):
 # ---------------- Remote izvori ----------------
 
 def remotive():
-    data = _get("https://remotive.com/api/remote-jobs", params={"category": "software-dev"}).json()
-    for j in data.get("jobs", []):
-        yield Job("Remotive", j["title"], j.get("company_name", ""), j["url"],
-                  location=j.get("candidate_required_location", ""), remote=True,
-                  posted=_dt_iso(j.get("publication_date")), tags=j.get("tags", []) + [j.get("job_type", "")],
-                  description=_clean(j.get("description")))
+    seen = set()
+    for cat in REMOTIVE_CATEGORIES:
+        try:
+            data = _get("https://remotive.com/api/remote-jobs", params={"category": cat}).json()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Remotive kategorija %s: %s", cat, e)
+            continue
+        for j in data.get("jobs", []):
+            url = j.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            yield Job("Remotive", j["title"], j.get("company_name", ""), url,
+                      location=j.get("candidate_required_location", ""), remote=True,
+                      posted=_dt_iso(j.get("publication_date")), tags=j.get("tags", []) + [j.get("job_type", "")],
+                      description=_clean(j.get("description")))
 
 
 def remoteok():
@@ -87,29 +114,47 @@ def arbeitnow():
 
 
 def jobicy():
-    for tag in ("developer", "junior", "intern"):
-        data = _get("https://jobicy.com/api/v2/remote-jobs", params={"count": 50, "tag": tag}).json()
+    seen = set()
+    for tag in JOBICY_TAGS:
+        try:
+            data = _get("https://jobicy.com/api/v2/remote-jobs", params={"count": 50, "tag": tag}).json()
+        except Exception as e:  # noqa: BLE001 – jedan tag (npr. 400) ne gasi ostale
+            log.warning("Jobicy tag %s: %s", tag, e)
+            continue
         for j in data.get("jobs", []):
-            yield Job("Jobicy", _clean(j["jobTitle"], 200), j.get("companyName", ""), j["url"],
+            url = j.get("url") or ""
+            if not url or url in seen:
+                continue
+            seen.add(url)
+            yield Job("Jobicy", _clean(j["jobTitle"], 200), j.get("companyName", ""), url,
                       location=j.get("jobGeo", ""), remote=True, posted=_dt_iso(j.get("pubDate")),
                       tags=[str(j.get("jobLevel", ""))] + list(j.get("jobIndustry") or []) + list(j.get("jobType") or []),
                       description=_clean(j.get("jobExcerpt") or j.get("jobDescription")))
 
 
 def himalayas():
-    for q in ("developer", "software engineer", "intern"):
-        data = _get("https://himalayas.app/jobs/api/search",
-                    params={"q": q, "seniority": "Entry-level", "sort": "recent"}).json()
+    seen = set()
+    for q in HIMALAYAS_QUERIES:
+        try:
+            data = _get("https://himalayas.app/jobs/api/search",
+                        params={"q": q, "seniority": "Entry-level", "sort": "recent"}).json()
+        except Exception as e:  # noqa: BLE001
+            log.warning("Himalayas upit %s: %s", q, e)
+            continue
         for j in data.get("jobs", []):
+            url = j.get("applicationLink") or j.get("guid", "")
+            if not url or url in seen:
+                continue
+            seen.add(url)
             restr = j.get("locationRestrictions") or []
-            yield Job("Himalayas", j["title"], j.get("companyName", ""), j.get("applicationLink") or j.get("guid", ""),
+            yield Job("Himalayas", j["title"], j.get("companyName", ""), url,
                       location=", ".join(restr) or "Anywhere", remote=True, posted=_dt_epoch(j.get("pubDate")),
                       tags=list(j.get("seniority") or []) + list(j.get("categories") or [])[:5],
                       description=_clean(j.get("excerpt") or j.get("description")))
 
 
-def weworkremotely():
-    r = _get("https://weworkremotely.com/categories/remote-programming-jobs.rss")
+def _wwr_feed(slug):
+    r = _get(f"https://weworkremotely.com/categories/{slug}.rss")
     root = ET.fromstring(r.content)
     for it in root.iter("item"):
         title = it.findtext("title", "")
@@ -122,6 +167,19 @@ def weworkremotely():
         yield Job("WeWorkRemotely", (pos or title).strip(), company.strip() if pos else "",
                   it.findtext("link", ""), location=it.findtext("region", "") or "Remote", remote=True,
                   posted=posted, description=_clean(it.findtext("description", "")))
+
+
+def weworkremotely():
+    seen = set()
+    for slug in WWR_FEEDS:
+        try:
+            for job in _wwr_feed(slug):
+                if not job.url or job.url in seen:
+                    continue
+                seen.add(job.url)
+                yield job
+        except Exception as e:  # noqa: BLE001
+            log.warning("WeWorkRemotely %s: %s", slug, e)
 
 
 # ---------------- Hrvatski izvori ----------------
@@ -151,7 +209,11 @@ def mojposao_hr():
     Može se promijeniti bez najave; tada se izvor samo preskoči."""
     seen = set()
     for q in HR_QUERIES:
-        data = _get("https://mojposao.hr/api/proxy/jobs/search", params={"query": q}).json()
+        try:
+            data = _get("https://mojposao.hr/api/proxy/jobs/search", params={"query": q}).json()
+        except Exception as e:  # noqa: BLE001
+            log.warning("MojPosao upit %s: %s", q, e)
+            continue
         for group in data.get("items", []):
             org = group.get("organization")
             company = org.get("name", "") if isinstance(org, dict) else "Anonimni poslodavac"

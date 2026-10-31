@@ -1,4 +1,4 @@
-"""Job bot: jednom dnevno skupi svježe programerske oglase za studente/juniore i pošalje ih na WhatsApp/Telegram.
+"""Job bot: jednom dnevno skupi svježe početne tehnološke oglase (programiranje, analitika, QA, IT podrška, DevOps…) i pošalje ih na WhatsApp/Telegram.
 
   python main.py                 # jedan run (Railway Cron) – ili scheduler ako je RUN_MODE=scheduler
   python main.py --dry-run       # samo ispiše poruke, ništa ne šalje i ne pamti
