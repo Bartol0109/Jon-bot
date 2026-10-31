@@ -54,10 +54,6 @@ jobs:
     permissions:
       contents: read
       actions: write
-    # schedule i workflow_dispatch smiju pisati u cache. data/ je u .gitignore,
-    # a actions/cache zna preskočiti ignorirane datoteke, zato stanje ide u
-    # runner.temp (nije u gitu i nema tajni).
-    cache-mode: write
     env:
       # Tajne: Settings → Secrets and variables → Actions → Secrets.
       TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
@@ -80,7 +76,6 @@ jobs:
       DISABLED_SOURCES: ${{ vars.DISABLED_SOURCES }}
       TZ_NAME: Europe/Zagreb
       RUN_MODE: cron
-      DATA_DIR: ${{ runner.temp }}/job-bot-data
 
     steps:
       - uses: actions/checkout@v4
@@ -92,6 +87,12 @@ jobs:
 
       - name: Instaliraj ovisnosti
         run: pip install -r requirements.txt
+
+      # data/ je u .gitignore, a cache action zna preskočiti ignorirane
+      # datoteke. Stanje zato ide u RUNNER_TEMP: nije u gitu i nema tajni.
+      # runner kontekst nije dostupan u env cijelog joba, samo u koracima.
+      - name: Direktorij stanja
+        run: echo "DATA_DIR=${RUNNER_TEMP}/job-bot-data" >> "$GITHUB_ENV"
 
       - name: Vrati stanje poslanih oglasa
         uses: actions/cache/restore@v4
