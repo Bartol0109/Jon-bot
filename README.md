@@ -9,7 +9,7 @@ Mala Python aplikacija koja **svaki dan u 12:00 (Europe/Zagreb)**:
    s kratkim obrazloženjem na hrvatskom – bez API ključa koristi filter po ključnim riječima,
 4. pošalje ti poruku na **WhatsApp (CallMeBot ili Twilio)** ili **Telegram**.
 
-Radi potpuno samostalno na [Railwayu](https://railway.com) – ne treba nikakav asistent.
+Radi samostalno kao besplatni zakazani workflow na GitHub Actionsu (svaki dan u 12:00 po Zagrebu). Railway ostaje kao alternativa ako ga već imaš.
 
 ---
 
@@ -119,26 +119,120 @@ Kriterije mijenjaš u `JOB_CRITERIA`, npr.
 
 ---
 
-## 4. Deploy na Railway (korak po korak)
+## 4. Deploy na GitHub Actions (preporučeno)
 
-### 4.1 GitHub
+Workflow `.github/workflows/daily-job-bot.yml` pokreće bota **jednom dnevno** u podne po `Europe/Zagreb`, ljeti i zimi. Zakazani runovi rade **samo na grani `main`**, nakon mergea. Pull request samo provjeri logiku rasporeda i ništa ne šalje.
+
+GitHubov cron je u **UTC-u** i run se zna odgoditi (često oko pune ure). 12:00 u Zagrebu je **10:00 UTC ljeti** (CEST) ili **11:00 UTC zimi** (CET). Zato raspored nije jedna UTC ura, nego:
+
+```cron
+5 9-16 * * *
+```
+
+svaki sat od 9 do 16 UTC, u minuti :05 (manje gužve nego u :00). Skripta `.github/scripts/should_send.py` odlučuje:
+
+- ako je lokalno **12:00 ili kasnije** i za **današnji zagrebački datum** još nije poslano → pošalji (odgoda do popodneva i dalje prođe; drugi run isti dan odmah izađe);
+- ako je **prije 12:00**, a cijeli prethodni dan je propušten → jedna nadoknada, zabilježena kao jučer, da današnje podne ipak ode;
+- inače prije podneva → preskoči.
+
+Ako slanje padne, datum se ne zabilježi pa sljedeći sat u tom prozoru pokuša opet. `ONLY_AT_LOCAL_HOUR` **nemoj** postavljati za Actions: ta provjera traži točno 12 h i odgođeni run bi preskočio cijeli dan. Workflow sam forsira `RUN_MODE=cron` i `TZ_NAME=Europe/Zagreb`.
+
+Već poslani oglasi (SQLite, isto što lokalno stoji u `data/seen_jobs.sqlite3`) i datum zadnjeg slanja drže se u **Actions cacheu** između runova. To nije commit i nema tajni. Na runneru su izvan git checkouta, jer je `data/` u `.gitignore`. GitHub cache obriše ako se ne dirne 7 dana ili ako se napuni kvota; svakodnevni run ga obnavlja. Ako cache nestane, bot može jednom ponoviti oglase iz zadnjih 48 h.
+
+### 4.1 Secrets (tajne)
+
+Repo → **Settings** → **Secrets and variables** → **Actions** → kartica **Secrets** → **New repository secret**.
+
+Imena moraju biti točno ovakva. Vrijednosti prazne u gitu; ovdje ide prava vrijednost. Prazan secret koji ne koristiš možeš preskočiti.
+
+| Secret | Kad treba |
+|---|---|
+| `TELEGRAM_BOT_TOKEN` | `SENDER=telegram` |
+| `TELEGRAM_CHAT_ID` | `SENDER=telegram` |
+| `LLM_API_KEY` | opcionalno (bez njega: filter po ključnim riječima) |
+| `CALLMEBOT_PHONE` | `SENDER=callmebot` |
+| `CALLMEBOT_APIKEY` | `SENDER=callmebot` |
+| `TWILIO_ACCOUNT_SID` | `SENDER=twilio` |
+| `TWILIO_AUTH_TOKEN` | `SENDER=twilio` |
+| `TWILIO_WHATSAPP_FROM` | `SENDER=twilio` (prazno = sandbox `whatsapp:+14155238886`) |
+| `TWILIO_WHATSAPP_TO` | `SENDER=twilio` |
+
+### 4.2 Variables (nisu tajne)
+
+Isti ekran → kartica **Variables** → **New repository variable**. Ako varijablu ne dodaš, vrijedi zadano.
+
+| Variable | Zadano ako je nema |
+|---|---|
+| `SENDER` | `telegram` |
+| `LLM_BASE_URL` | `https://api.x.ai/v1` |
+| `LLM_MODEL` | `grok-4.20-non-reasoning` |
+| `JOB_CRITERIA` | ugrađeni tekst (student / junior / remote ili Hrvatska) |
+| `MAX_RESULTS` | `8` |
+| `MAX_AGE_HOURS` | `48` (cache se računa kao trajna pohrana) |
+| `DISABLED_SOURCES` | ništa (npr. `himalayas,arbeitnow`) |
+
+`SENDER=callmebot` ili `SENDER=twilio` postaviš ovdje; tokeni i brojevi idu u Secrets, ne u Variables.
+
+### 4.3 Ručni test
+
+1. Otvori **Actions**.
+2. Lijevo odaberi **Dnevni job bot**.
+3. **Run workflow**.
+4. Branch: **`main`** (nakon mergea). Run s druge grane ne dijeli cache s dnevnim rasporedom na `main`.
+5. **mode**:
+   - `dry-run` — skupi oglase i ispiše poruku u log; ne šalje i ne računa se kao današnje slanje;
+   - `test-message` — pošalje kratku testnu poruku preko `SENDER`-a (`python main.py --test-whatsapp`);
+   - `send` — pravi dnevni run. Ako uspije, taj se dan više ne šalje automatski.
+6. **Run workflow**.
+
+Prije prvog `send` / rasporeda najprije `test-message`, pa po želji `dry-run`.
+
+### 4.4 Logovi
+
+**Actions** → **Dnevni job bot** → klik na run (zeleno / crveno) → job **run** → koraci.
+
+- **Odluči treba li slati** — za zakazani run piše je li poslao, preskočio (već poslano ili još nije podne) ili radi nadoknadu.
+- **Dry-run** / **Testna poruka** / **Pošalji dnevne oglase** — ispis bota.
+- Crveni korak: otvori ga i pročitaj zadnje linije (najčešće nedostaje secret za odabrani `SENDER`).
+
+Zakazani run koji namjerno ništa ne pošalje ostaje zelen.
+
+### 4.5 60 dana bez aktivnosti
+
+U **javnom** repozitoriju GitHub **automatski ugasi zakazane workflowe** ako 60 dana nema aktivnosti na repou. Samo pokretanje Actions to ne produžuje. Ništa se ne briše; stanje workflowa postane `disabled_inactivity` i ne ide ni cron ni ručni run dok ga netko opet ne uključi.
+
+`.github/workflows/keepalive.yml` (**Održavanje rasporeda**) svaki ponedjeljak u 08:20 UTC napravi mali commit na `main` (`.github/keepalive-last.txt`, samo UTC vrijeme). To drži rok živim. Treba dozvola `contents: write` (već je u workflowu, preko `GITHUB_TOKEN`) i da zaštita grane ne blokira `github-actions[bot]`. Ručno: **Actions** → **Održavanje rasporeda** → **Run workflow** na `main`.
+
+Ako je GitHub već ugasio workflow, keepalive se sam ne može upaliti. Uključi oba:
+
+1. **Actions** → **Dnevni job bot** → **Enable workflow**.
+2. **Actions** → **Održavanje rasporeda** → **Enable workflow**.
+
+Isto radi `gh workflow enable "Dnevni job bot"` i `gh workflow enable "Održavanje rasporeda"`. Propušteni dani se ne nadoknađuju unazad osim kroz jutarnju nadoknadu iz odjeljka 4, i to samo ako je workflow uopće upaljen.
+
+---
+
+## Alternativa: deploy na Railway
+
+Railway više nije potreban. Upute ostaju ako servis već imaš ili ga kasnije otvoriš. Na Actionsima nemoj postavljati `ONLY_AT_LOCAL_HOUR`; na Railwayu ta varijabla i dalje vrijedi kao dolje.
+
+### A.1 GitHub
+Datoteke su u **korijenu** repozitorija (nema podmape `job-bot/`). `.env` je u `.gitignore` – **ključeve nikad ne stavljaj u git**. Ako repozitorij već postoji, preskoči `git init`. Novi izgleda ovako:
+
 ```bash
-cd job-bot
 git init && git add . && git commit -m "Job bot"
-# na github.com napravi novi (privatni) repozitorij, npr. job-bot, pa:
-git remote add origin https://github.com/<tvoj-user>/job-bot.git
+git remote add origin https://github.com/<tvoj-user>/<repo>.git
 git branch -M main && git push -u origin main
 ```
-`.env` je u `.gitignore` – **ključeve nikad ne stavljaj u git**.
 
-### 4.2 Railway servis
-1. https://railway.com → *New Project* → *Deploy from GitHub repo* → odaberi `job-bot`.
+### A.2 Railway servis
+1. https://railway.com → *New Project* → *Deploy from GitHub repo* → odaberi ovaj repozitorij.
 2. Railway (Railpack) sam prepozna Python (`requirements.txt`, `main.py`) i pokreće `python main.py`
    (isto piše u `Procfile`). Ako treba, u *Settings → Deploy → Custom Start Command* upiši `python main.py`.
 3. *Variables* → dodaj varijable iz `.env.example` (najmanje `SENDER` + podaci za odabrani kanal).
    Može i *Raw Editor* → zalijepi sadržaj svoje `.env` datoteke.
 
-### 4.3 Cron raspored (preporučeno) ⏰
+### A.3 Cron raspored ⏰
 *Settings → Cron Schedule*. Railway cron radi u **UTC**-u, a Hrvatska ima ljetno/zimsko vrijeme:
 
 | Razdoblje | 12:00 u Zagrebu = | cron |
@@ -156,7 +250,7 @@ U *Settings → Deploy → Restart Policy* stavi **Never** (ili On Failure) da s
 > Napomena: datoteka `railway.json` (config-as-code) je kod Railwaya označena kao zastarjela,
 > zato se raspored postavlja u dashboardu.
 
-### 4.4 Volume (preporučeno – pamćenje poslanih oglasa)
+### A.4 Volume (pamćenje poslanih oglasa)
 Railway disk je **privremen** – nakon svakog runa/deploya `data/` nestaje. Bez volumena bot ne pamti što je poslao,
 pa se oslanja na datum: uzima samo oglase iz zadnjih **26 h** (malo duplikata, ali može propustiti oglas koji je izvor
 objavio s kašnjenjem).
@@ -167,12 +261,12 @@ S volumenom:
    i tada gleda oglase iz zadnjih **48 h** te preskače već poslane.
 3. (Opcionalno) `DATA_DIR=/data` ako želiš eksplicitno.
 
-### 4.5 Test na Railwayu
+### A.5 Test na Railwayu
 - Ručni run: `railway cron run` iz Railway CLI-ja (ili redeploy servisa) – pogledaj *Logs*.
 - Za testnu poruku privremeno promijeni start command u `python main.py --test-whatsapp`, deployaj, pa vrati na `python main.py`.
 - Za probu bez slanja: start command `python main.py --dry-run` (poruka se ispiše u logove).
 
-### Alternativa: stalno upaljen servis (`RUN_MODE=scheduler`)
+### A.6 Stalno upaljen servis (`RUN_MODE=scheduler`)
 Postavi `RUN_MODE=scheduler` (i `RUN_AT=12:00`), **ne** postavljaj Cron Schedule, restart policy *Always*.
 Proces stalno radi i sam čeka 12:00 po `Europe/Zagreb` (zoneinfo, DST riješen automatski).
 Troši više resursa od crona, pa je cron preporučen.
@@ -183,7 +277,7 @@ Troši više resursa od crona, pa je cron preporučen.
 
 | Varijabla | Zadano | Opis |
 |---|---|---|
-| `SENDER` | `callmebot` | `callmebot` / `telegram` / `twilio` |
+| `SENDER` | `callmebot` (GitHub Actions: `telegram` ako nema variable) | `callmebot` / `telegram` / `twilio` |
 | `CALLMEBOT_PHONE`, `CALLMEBOT_APIKEY` | – | CallMeBot |
 | `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID` | – | Telegram |
 | `TWILIO_ACCOUNT_SID`, `TWILIO_AUTH_TOKEN`, `TWILIO_WHATSAPP_FROM`, `TWILIO_WHATSAPP_TO` | from: `whatsapp:+14155238886` | Twilio |
@@ -194,7 +288,7 @@ Troši više resursa od crona, pa je cron preporučen.
 | `MAX_RESULTS` | `8` | max oglasa po danu |
 | `RUN_MODE` | `cron` | `cron` / `scheduler` |
 | `RUN_AT` | `12:00` | vrijeme za scheduler mod |
-| `ONLY_AT_LOCAL_HOUR` | – | npr. `12` za DST-safe cron `0 10,11 * * *` |
+| `ONLY_AT_LOCAL_HOUR` | – | samo Railway: npr. `12` uz cron `0 10,11 * * *`. Na Actionsima nemoj (odgođeni run bi preskočio dan) |
 | `TZ_NAME` | `Europe/Zagreb` | |
 | `DATA_DIR` | `RAILWAY_VOLUME_MOUNT_PATH` ili `./data` | gdje je SQLite baza |
 | `MAX_AGE_HOURS` | 48 (s volumenom) / 26 (bez) | koliko stari oglasi |
@@ -202,16 +296,20 @@ Troši više resursa od crona, pa je cron preporučen.
 
 ## Struktura
 ```
-main.py              CLI: --dry-run, --test-whatsapp, --sender, --mode, --telegram-chat-id
-jobbot/sources.py    izvori oglasa (svaki izoliran)
-jobbot/ranking.py    keyword filter + LLM rangiranje
-jobbot/formatter.py  poruka na hrvatskom + dijeljenje na dijelove
-jobbot/senders.py    CallMeBot / Twilio / Telegram
-jobbot/store.py      SQLite pamćenje poslanih oglasa
+main.py                          CLI: --dry-run, --test-whatsapp, --sender, --mode, --telegram-chat-id
+jobbot/sources.py                izvori oglasa (svaki izoliran)
+jobbot/ranking.py                keyword filter + LLM rangiranje
+jobbot/formatter.py              poruka na hrvatskom + dijeljenje na dijelove
+jobbot/senders.py                CallMeBot / Twilio / Telegram
+jobbot/store.py                  SQLite pamćenje poslanih oglasa
+.github/workflows/daily-job-bot.yml   dnevni GitHub Actions raspored + ručni test
+.github/workflows/keepalive.yml       tjedni commit da GitHub ne ugasi schedule (60 dana)
+.github/scripts/should_send.py        točno jedno slanje po zagrebačkom danu
 ```
 
 ## Poznata ograničenja
 - Svježih oglasa „za početnike“ zna biti malo (posebno vikendom) – tada stigne poruka *„Danas nema novih oglasa…“*.
+- GitHub Actions cache nije pravi disk: ako ga GitHub obriše, sljedeći run može ponoviti oglase iz zadnjih 48 h. Zakazani workflow radi samo na `main`. U javnom repou GitHub ugasi schedule nakon 60 dana bez aktivnosti (vidi odjeljak 4.5).
 - Keyword filter je grub: ako nema dovoljno jasnih junior oglasa, dopuni ih ne-senior oglasima bez traženih godina
   iskustva (označeno s „provjeri uvjete“). AI način je puno precizniji.
 - MojPosao.hr koristi nedokumentirani endpoint; ako se promijeni, izvor se samo preskoči (vidi log).
