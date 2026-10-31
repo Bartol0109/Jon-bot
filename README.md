@@ -180,6 +180,8 @@ Isti ekran → kartica **Variables** → **New repository variable**. Ako varija
 | `REMOTE_REGIONS` | EU / Europe / worldwide (ne pojedina susjedna država) |
 | `EXCLUDED_LANGUAGES` | fraze poput `fluent German`, `Kundenservice` (prazno = ugrađeni popis) |
 | `EXCLUDE_KEYWORDS` | hardware, firmware, elektro, … u naslovu (prazno = ugrađeni popis) |
+| `NARROW_MODE` | isključeno; `1` uključuje uski popis |
+| `NARROW_KEYWORDS` | frontend, react, dizajn, unity, … (prazno = ugrađeni popis) |
 | `MAX_RESULTS` | `8` |
 | `MAX_AGE_HOURS` | `48` (cache se računa kao trajna pohrana) |
 | `DISABLED_SOURCES` | ništa (npr. `himalayas,arbeitnow`) |
@@ -370,6 +372,8 @@ Troši više resursa od crona, pa je cron preporučen.
 | `REMOTE_REGIONS` | EU, Europe, worldwide, Hrvatska | remote otvoren bilo gdje u EU; prazno = zadano |
 | `EXCLUDED_LANGUAGES` | ugrađene fraze | zabranjeni jezik; prazno = zadano |
 | `EXCLUDE_KEYWORDS` | hardware, firmware, elektro, … | riječ u naslovu izbacuje oglas; prazno = zadano |
+| `NARROW_MODE` | isključeno | `1` = uski popis umjesto širokih uloga |
+| `NARROW_KEYWORDS` | frontend, react, dizajn, unity, … | naslov u uskom načinu; prazno = zadano |
 | `MAX_RESULTS` | `8` | max oglasa po danu |
 | `RUN_MODE` | `cron` | `cron` / `scheduler` |
 | `RUN_AT` | `12:00` | vrijeme za scheduler mod |
