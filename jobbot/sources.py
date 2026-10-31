@@ -188,8 +188,8 @@ def weworkremotely():
 def posao_hr():
     """Posao.hr službeni RSS za djelatnost 'Informatika i telekomunikacije'.
 
-    URL-ovi tipa /rss/grad/zadar/ nisu filter po gradu (vraćaju opći feed),
-    pa se Zadar prepoznaje iz polja mjesta rada u ovom IT feedu.
+    URL-ovi tipa /rss/grad/zadar/ nisu filter po gradu (vraćaju opći feed).
+    Zagreb i Zadar se čitaju iz mjesta rada; on-site izvan tih gradova kasnije otpada.
     """
     r = _get("https://www.posao.hr/rss/djelatnost/informatika-i-telekomunikacije/")
     root = ET.fromstring(r.content)
@@ -216,7 +216,7 @@ def mojposao_hr():
     # Upit samo s imenom grada vrati oglase koje rolni upit (često prva stranica Zagreba) preskoči.
     queries = list(HR_QUERIES)
     seen_q = {q.casefold() for q in queries}
-    for city in config.PREFERRED_CITIES:
+    for city in config.ONSITE_CITIES:
         if city.casefold() not in seen_q:
             queries.append(city)
             seen_q.add(city.casefold())

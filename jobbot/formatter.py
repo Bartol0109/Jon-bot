@@ -3,9 +3,7 @@ from datetime import datetime
 from zoneinfo import ZoneInfo
 
 from . import config
-from .ranking import preferred_city
-
-FLAGS = {"hr": "🇭🇷", "remote": "🌍"}
+from .ranking import place_tag
 
 
 def _where(job):
@@ -23,9 +21,7 @@ def build_messages(jobs, sender, mode="keywords"):
     header = f"💼 {b(f'Novi oglasi za posao – {today}')}\nPronađeno: {len(jobs)} ({'AI odabir' if mode == 'llm' else 'filter po ključnim riječima'})"
     blocks = []
     for i, j in enumerate(jobs, 1):
-        city = preferred_city(j)
-        star = f"⭐ {city} " if city else ""
-        lines = [f"{i}. {FLAGS.get(j.scope, '')} {star}{b(e(j.title))}",
+        lines = [f"{i}. {place_tag(j)} {b(e(j.title))}",
                  f"🏢 {e(j.company or 'n/a')} | 📍 {e(_where(j))}"]
         if j.reason:
             lines.append(f"💡 {e(j.reason)}")

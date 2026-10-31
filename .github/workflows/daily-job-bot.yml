@@ -72,7 +72,8 @@ jobs:
       LLM_MODEL: ${{ vars.LLM_MODEL }}
       JOB_CRITERIA: ${{ vars.JOB_CRITERIA }}
       ROLE_KEYWORDS: ${{ vars.ROLE_KEYWORDS }}
-      PREFERRED_CITIES: ${{ vars.PREFERRED_CITIES }}
+      ONSITE_CITIES: ${{ vars.ONSITE_CITIES }}
+      REMOTE_REGIONS: ${{ vars.REMOTE_REGIONS }}
       MAX_RESULTS: ${{ vars.MAX_RESULTS }}
       MAX_AGE_HOURS: ${{ vars.MAX_AGE_HOURS }}
       DISABLED_SOURCES: ${{ vars.DISABLED_SOURCES }}

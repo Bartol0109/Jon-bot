@@ -36,26 +36,81 @@ NOT_DEV = r"sales|prodaj|recruit|marketing|account(ant|ing)|hr\b|" \
           r"speaking customer|call cent|business develop|nurse|driver|data entry|unos podataka|" \
           r"financijsk|kontroling|računovo|knjigovod|payroll|fp&a"
 EXPERIENCE = r"\b([2-9]|1[0-9])\+?\s*(-\s*\d+\s*)?(years|yrs|godin[ae])|minimum of [2-9]|at least [2-9]|najmanje [2-9]"
-OPEN_LOC = r"anywhere|worldwide|global|europe|\beu\b|emea|croatia|hrvatska|cet|remote$|^remote|^$"
+ENTRY_RE, SENIOR_RE, NOT_DEV_RE, EXP_RE = (
+    re.compile(p, re.I) for p in (ENTRY, SENIOR, NOT_DEV, EXPERIENCE))
 
-ENTRY_RE, SENIOR_RE, NOT_DEV_RE, EXP_RE, OPEN_LOC_RE = (
-    re.compile(p, re.I) for p in (ENTRY, SENIOR, NOT_DEV, EXPERIENCE, OPEN_LOC))
+HYBRID_RE = re.compile(r"hybrid|hibrid", re.I)
+_REMOTE_LABEL = re.compile(r"^(?:remote|work from home|wfh)\b[\s,.:;\-–—]*", re.I)
 
 
-def preferred_city(job: Job):
-    """Prvi grad iz PREFERRED_CITIES koji se vidi u lokaciji ili naslovu, inače None."""
+def _terms_re(terms):
+    parts = [rf"\b{re.escape(t.strip())}\b" for t in terms if t and t.strip()]
+    return re.compile("|".join(parts), re.I) if parts else re.compile(r"(?!)")
+
+
+REGION_RE = _terms_re(config.REMOTE_REGIONS)
+
+
+def _city_re(city: str):
+    # Zadar u padežu je Zadru/Zadra, ne Zadar+nastavak. Zagreb je uvijek Zagrebu/Zagreba.
+    if city.casefold() == "zadar":
+        # Zadar, Zadru, Zadra, Zadarska — nije isti nastavak kao Zagreb.
+        return re.compile(r"\bzad(?:ar\w*|r[aeu]\w*)", re.I)
+    return re.compile(rf"\b{re.escape(city)}\w*", re.I)
+
+
+def matched_cities(job: Job):
+    """Gradovi iz ONSITE_CITIES u lokaciji ili naslovu, uključujući hrvatske padeže."""
     blob = f"{job.location or ''} {job.title or ''}"
-    for city in config.PREFERRED_CITIES:
-        if city and re.search(re.escape(city), blob, re.I):
-            return city
-    return None
+    return [city for city in config.ONSITE_CITIES if city and _city_re(city).search(blob)]
+
+
+def work_mode(job: Job) -> str:
+    """onsite | hybrid | remote. Hybrid se gleda u naslovu i lokaciji, ne u cijelom opisu."""
+    blob = f"{job.title or ''} {job.location or ''}"
+    if HYBRID_RE.search(blob):
+        return "hybrid"
+    if job.remote or re.search(r"\bremote\b|rad od kuće|rad od kuce|\bwfh\b", job.location or "", re.I):
+        return "remote"
+    return "onsite"
+
+
+def remote_open(location: str) -> bool:
+    """Remote je dozvoljen ako nije vezan isključivo uz zabranjenu državu."""
+    text = (location or "").strip()
+    rest = _REMOTE_LABEL.sub("", text).strip(" -–—,.;")
+    if not rest:
+        return True
+    if REGION_RE.search(rest) or REGION_RE.search(text):
+        return True
+    for city in config.ONSITE_CITIES:
+        if city and _city_re(city).search(text):
+            return True
+    return False
 
 
 def location_ok(job: Job) -> bool:
+    mode = work_mode(job)
+    if mode in ("onsite", "hybrid"):
+        return bool(matched_cities(job))
+    # Remote s hrvatskih portala računa se (kandidat je u Hrvatskoj).
     if job.scope == "hr":
         return True
-    loc = (job.location or "").strip()
-    return bool(OPEN_LOC_RE.search(loc))
+    return remote_open(job.location or "")
+
+
+def place_tag(job: Job) -> str:
+    """Jasna oznaka: ⭐ Zagreb / ⭐ Zadar / 🌍 Remote."""
+    mode = work_mode(job)
+    if mode == "remote":
+        return "🌍 Remote"
+    cities = matched_cities(job)
+    label = "/".join(cities) if cities else ""
+    if mode == "hybrid" and label:
+        return f"⭐ {label} · hibrid"
+    if label:
+        return f"⭐ {label}"
+    return ""
 
 
 def prefilter(jobs):
@@ -92,10 +147,6 @@ def keyword_rank(jobs, limit):
             neutral.append(j)
         if j.scope == "hr" and j.reason:
             j.reason += " Posao u Hrvatskoj."
-        city = preferred_city(j)
-        if city and j.reason:
-            j.score += 10
-            j.reason += f" Prednost: {city}."
     key = lambda x: (x.score, x.posted.timestamp() if x.posted else 0)  # noqa: E731
     entry.sort(key=key, reverse=True)
     neutral.sort(key=key, reverse=True)
@@ -116,8 +167,9 @@ Kriteriji korisnika: {criteria}
 Ispod je JSON lista oglasa (id, naslov, tvrtka, lokacija, izvor, oznake, opis).
 Ocijeni svaki oglas 0-10 prema kriterijima. Kandidat je student BEZ iskustva: oglasi koji traže
 više godina iskustva ili senior/lead/manager razinu dobivaju nisku ocjenu. Prodaja, marketing i
-opća administracija dobivaju 0. Remote oglasi moraju biti dostupni nekome iz Hrvatske (EU).
-Ako uloga odgovara, oglasi u ovim gradovima dobivaju višu ocjenu: {cities}.
+opća administracija dobivaju 0. On-site i hybrid samo u gradovima: {cities}.
+Remote samo ako je otvoren za: {regions}, ili za Europu/EU/CET/worldwide.
+Oglase ograničene samo na SAD, UK ili Njemačku odbaci.
 Vrati najviše {limit} najboljih s ocjenom >= 6.
 
 Odgovori ISKLJUČIVO JSON-om oblika:
@@ -137,7 +189,9 @@ def llm_rank(jobs, limit):
         "messages": [
             {"role": "system", "content": "Odgovaraš samo valjanim JSON-om."},
             {"role": "user", "content": PROMPT.format(
-                criteria=config.JOB_CRITERIA, limit=limit, cities=", ".join(config.PREFERRED_CITIES),
+                criteria=config.JOB_CRITERIA, limit=limit,
+                cities=", ".join(config.ONSITE_CITIES),
+                regions=", ".join(config.REMOTE_REGIONS[:12]),
                 jobs=json.dumps(items, ensure_ascii=False))},
         ],
         "response_format": {"type": "json_object"},
@@ -166,52 +220,17 @@ def llm_rank(jobs, limit):
     return out[:limit]
 
 
-def is_considered(job: Job) -> bool:
-    """Isti prag kao keyword rang: junior signal ili uloga bez traženih godina."""
-    title_tags = f"{job.title} {' '.join(map(str, job.tags))}"
-    if ENTRY_RE.search(job.title) or ENTRY_RE.search(title_tags):
-        return True
-    return bool(ROLE_RE.search(job.title) and not EXP_RE.search(job.description or ""))
-
-
-def finalize(picked, pool, limit):
-    """Preferirani gradovi idu na vrh i ne ispadaju zbog limita, ali prolaze isti prag uloge."""
-    picked_urls = {j.url for j in picked}
-    pref = []
-    for j in pool:
-        city = preferred_city(j)
-        if not city or (j.url not in picked_urls and not is_considered(j)):
-            continue
-        if city.lower() not in (j.reason or "").lower():
-            j.reason = f"Prednost: {city}. {j.reason or ''}".strip()
-            if j.score < 8:
-                j.score = 8
-        pref.append(j)
-    pref.sort(key=lambda j: j.score, reverse=True)
-    out, seen = [], set()
-    for j in pref + list(picked):
-        if j.url in seen:
-            continue
-        seen.add(j.url)
-        out.append(j)
-        if len(out) >= limit:
-            break
-    return out
-
-
 def rank(jobs, limit):
     cands = prefilter(jobs)
     log.info("Nakon predfiltera: %d kandidata", len(cands))
     if config.LLM_API_KEY and cands:
         # Kandidati s junior signalom idu prvi, max 80 da prompt ostane malen/jeftin.
-        # Preferirani grad i dalje ide ispred toga.
         cands.sort(key=lambda j: (
-            bool(preferred_city(j)),
             bool(ENTRY_RE.search(f"{j.title} {' '.join(map(str, j.tags))}")),
             j.scope == "hr",
         ), reverse=True)
         try:
-            return finalize(llm_rank(cands[:80], limit), cands, limit), "llm"
+            return llm_rank(cands[:80], limit), "llm"
         except Exception as e:  # noqa: BLE001
             log.warning("LLM rangiranje nije uspjelo (%s) – koristim keyword filter", e)
-    return finalize(keyword_rank(cands, limit), cands, limit), "keywords"
+    return keyword_rank(cands, limit), "keywords"

@@ -54,16 +54,37 @@ DEFAULT_ROLE_KEYWORDS = [
 _role_raw = env("ROLE_KEYWORDS", "")
 ROLE_KEYWORDS = [p.strip() for p in _role_raw.split(",") if p.strip()] or list(DEFAULT_ROLE_KEYWORDS)
 
-# I dalje se pretražuje cijela Hrvatska i remote. Ovi gradovi idu na vrh poruke.
-# Prazno = Zadar. Vlastita vrijednost (zarezom) zamjenjuje zadano.
-_cities_raw = env("PREFERRED_CITIES", "")
-PREFERRED_CITIES = [p.strip() for p in _cities_raw.split(",") if p.strip()] or ["Zadar"]
+def _csv(name, default):
+    raw = env(name, "")
+    items = [p.strip() for p in raw.split(",") if p.strip()]
+    return items or list(default)
+
+
+# On-site i hybrid samo u ovim gradovima. Prazno = Zagreb, Zadar.
+ONSITE_CITIES = _csv("ONSITE_CITIES", ["Zagreb", "Zadar"])
+# Remote mora biti otvoren barem jednoj od ovih regija (ili biti worldwide/Europa).
+# Prazno = Hrvatska, susjedne zemlje i Europe/EU/CET/worldwide.
+REMOTE_REGIONS = _csv("REMOTE_REGIONS", [
+    "Croatia", "Hrvatska",
+    "Slovenia", "Slovenija",
+    "Bosnia", "Herzegovina", "Bosna", "Hercegovina", "BiH",
+    "Serbia", "Srbija",
+    "Montenegro", "Crna Gora",
+    "Hungary", "Mađarska", "Madarska",
+    "Austria", "Austrija",
+    "Italy", "Italia", "Italija",
+    "Europe", "European", "EU", "EEA", "Schengen", "EMEA",
+    "CET", "CEST",
+    "worldwide", "anywhere", "global", "world",
+])
 
 JOB_CRITERIA = env(
     "JOB_CRITERIA",
     "Student bez iskustva. Početne uloge: programiranje, data/business/BI analitičar, QA i testiranje, "
     "IT i tehnička podrška, helpdesk, application support, technical ili customer success engineer, "
-    "junior DevOps ili sysadmin. Remote ili u Hrvatskoj. Bez senior/lead/manager razine i bez višegodišnjeg iskustva.",
+    "junior DevOps ili sysadmin. On-site ili hybrid samo Zagreb ili Zadar. Remote samo ako je otvoren "
+    "za Hrvatsku, susjedne zemlje (Slovenija, BiH, Srbija, Crna Gora, Mađarska, Austrija, Italija) "
+    "ili za Europu/EU/CET/worldwide. Bez senior/lead/manager razine.",
 )
 
 LLM_API_KEY = env("LLM_API_KEY")
