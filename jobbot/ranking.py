@@ -42,6 +42,15 @@ ENTRY_RE, SENIOR_RE, NOT_DEV_RE, EXP_RE, OPEN_LOC_RE = (
     re.compile(p, re.I) for p in (ENTRY, SENIOR, NOT_DEV, EXPERIENCE, OPEN_LOC))
 
 
+def preferred_city(job: Job):
+    """Prvi grad iz PREFERRED_CITIES koji se vidi u lokaciji ili naslovu, inače None."""
+    blob = f"{job.location or ''} {job.title or ''}"
+    for city in config.PREFERRED_CITIES:
+        if city and re.search(re.escape(city), blob, re.I):
+            return city
+    return None
+
+
 def location_ok(job: Job) -> bool:
     if job.scope == "hr":
         return True
@@ -83,6 +92,10 @@ def keyword_rank(jobs, limit):
             neutral.append(j)
         if j.scope == "hr" and j.reason:
             j.reason += " Posao u Hrvatskoj."
+        city = preferred_city(j)
+        if city and j.reason:
+            j.score += 10
+            j.reason += f" Prednost: {city}."
     key = lambda x: (x.score, x.posted.timestamp() if x.posted else 0)  # noqa: E731
     entry.sort(key=key, reverse=True)
     neutral.sort(key=key, reverse=True)
@@ -104,6 +117,7 @@ Ispod je JSON lista oglasa (id, naslov, tvrtka, lokacija, izvor, oznake, opis).
 Ocijeni svaki oglas 0-10 prema kriterijima. Kandidat je student BEZ iskustva: oglasi koji traže
 više godina iskustva ili senior/lead/manager razinu dobivaju nisku ocjenu. Prodaja, marketing i
 opća administracija dobivaju 0. Remote oglasi moraju biti dostupni nekome iz Hrvatske (EU).
+Ako uloga odgovara, oglasi u ovim gradovima dobivaju višu ocjenu: {cities}.
 Vrati najviše {limit} najboljih s ocjenom >= 6.
 
 Odgovori ISKLJUČIVO JSON-om oblika:
@@ -122,8 +136,9 @@ def llm_rank(jobs, limit):
         "temperature": 0.2,
         "messages": [
             {"role": "system", "content": "Odgovaraš samo valjanim JSON-om."},
-            {"role": "user", "content": PROMPT.format(criteria=config.JOB_CRITERIA, limit=limit,
-                                                      jobs=json.dumps(items, ensure_ascii=False))},
+            {"role": "user", "content": PROMPT.format(
+                criteria=config.JOB_CRITERIA, limit=limit, cities=", ".join(config.PREFERRED_CITIES),
+                jobs=json.dumps(items, ensure_ascii=False))},
         ],
         "response_format": {"type": "json_object"},
     }
@@ -151,15 +166,52 @@ def llm_rank(jobs, limit):
     return out[:limit]
 
 
+def is_considered(job: Job) -> bool:
+    """Isti prag kao keyword rang: junior signal ili uloga bez traženih godina."""
+    title_tags = f"{job.title} {' '.join(map(str, job.tags))}"
+    if ENTRY_RE.search(job.title) or ENTRY_RE.search(title_tags):
+        return True
+    return bool(ROLE_RE.search(job.title) and not EXP_RE.search(job.description or ""))
+
+
+def finalize(picked, pool, limit):
+    """Preferirani gradovi idu na vrh i ne ispadaju zbog limita, ali prolaze isti prag uloge."""
+    picked_urls = {j.url for j in picked}
+    pref = []
+    for j in pool:
+        city = preferred_city(j)
+        if not city or (j.url not in picked_urls and not is_considered(j)):
+            continue
+        if city.lower() not in (j.reason or "").lower():
+            j.reason = f"Prednost: {city}. {j.reason or ''}".strip()
+            if j.score < 8:
+                j.score = 8
+        pref.append(j)
+    pref.sort(key=lambda j: j.score, reverse=True)
+    out, seen = [], set()
+    for j in pref + list(picked):
+        if j.url in seen:
+            continue
+        seen.add(j.url)
+        out.append(j)
+        if len(out) >= limit:
+            break
+    return out
+
+
 def rank(jobs, limit):
     cands = prefilter(jobs)
     log.info("Nakon predfiltera: %d kandidata", len(cands))
     if config.LLM_API_KEY and cands:
-        # Kandidati s junior signalom idu prvi, max 80 da prompt ostane malen/jeftin
-        cands.sort(key=lambda j: (bool(ENTRY_RE.search(f"{j.title} {' '.join(map(str, j.tags))}")), j.scope == "hr"),
-                   reverse=True)
+        # Kandidati s junior signalom idu prvi, max 80 da prompt ostane malen/jeftin.
+        # Preferirani grad i dalje ide ispred toga.
+        cands.sort(key=lambda j: (
+            bool(preferred_city(j)),
+            bool(ENTRY_RE.search(f"{j.title} {' '.join(map(str, j.tags))}")),
+            j.scope == "hr",
+        ), reverse=True)
         try:
-            return llm_rank(cands[:80], limit), "llm"
+            return finalize(llm_rank(cands[:80], limit), cands, limit), "llm"
         except Exception as e:  # noqa: BLE001
             log.warning("LLM rangiranje nije uspjelo (%s) – koristim keyword filter", e)
-    return keyword_rank(cands, limit), "keywords"
+    return finalize(keyword_rank(cands, limit), cands, limit), "keywords"

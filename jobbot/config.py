@@ -54,6 +54,11 @@ DEFAULT_ROLE_KEYWORDS = [
 _role_raw = env("ROLE_KEYWORDS", "")
 ROLE_KEYWORDS = [p.strip() for p in _role_raw.split(",") if p.strip()] or list(DEFAULT_ROLE_KEYWORDS)
 
+# I dalje se pretražuje cijela Hrvatska i remote. Ovi gradovi idu na vrh poruke.
+# Prazno = Zadar. Vlastita vrijednost (zarezom) zamjenjuje zadano.
+_cities_raw = env("PREFERRED_CITIES", "")
+PREFERRED_CITIES = [p.strip() for p in _cities_raw.split(",") if p.strip()] or ["Zadar"]
+
 JOB_CRITERIA = env(
     "JOB_CRITERIA",
     "Student bez iskustva. Početne uloge: programiranje, data/business/BI analitičar, QA i testiranje, "

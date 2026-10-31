@@ -8,6 +8,7 @@ from email.utils import parsedate_to_datetime
 
 import requests
 
+from . import config
 from .models import Job
 
 log = logging.getLogger(__name__)
@@ -185,7 +186,11 @@ def weworkremotely():
 # ---------------- Hrvatski izvori ----------------
 
 def posao_hr():
-    """Posao.hr službeni RSS za djelatnost 'Informatika i telekomunikacije'."""
+    """Posao.hr službeni RSS za djelatnost 'Informatika i telekomunikacije'.
+
+    URL-ovi tipa /rss/grad/zadar/ nisu filter po gradu (vraćaju opći feed),
+    pa se Zadar prepoznaje iz polja mjesta rada u ovom IT feedu.
+    """
     r = _get("https://www.posao.hr/rss/djelatnost/informatika-i-telekomunikacije/")
     root = ET.fromstring(r.content)
     for it in root.iter("item"):
@@ -208,7 +213,14 @@ def mojposao_hr():
     """MojPosao.hr – javni (nedokumentirani) JSON endpoint koji koristi njihova web stranica.
     Može se promijeniti bez najave; tada se izvor samo preskoči."""
     seen = set()
-    for q in HR_QUERIES:
+    # Upit samo s imenom grada vrati oglase koje rolni upit (često prva stranica Zagreba) preskoči.
+    queries = list(HR_QUERIES)
+    seen_q = {q.casefold() for q in queries}
+    for city in config.PREFERRED_CITIES:
+        if city.casefold() not in seen_q:
+            queries.append(city)
+            seen_q.add(city.casefold())
+    for q in queries:
         try:
             data = _get("https://mojposao.hr/api/proxy/jobs/search", params={"query": q}).json()
         except Exception as e:  # noqa: BLE001

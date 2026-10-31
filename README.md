@@ -26,7 +26,7 @@ Radi samostalno kao besplatni zakazani workflow na GitHub Actionsu (svaki dan u 
 | Himalayas | službeni JSON API | remote | „Entry-level“ + upiti developer, data/business analyst, QA, IT support, helpdesk, devops; SAD-only se izbace |
 | We Work Remotely | RSS | remote | programming, devops/sysadmin i customer support |
 | Posao.hr | službeni RSS | Hrvatska | djelatnost „Informatika i telekomunikacije“ (pokriva i podršku i analitiku) |
-| MojPosao.hr | JSON koji koristi njihova web stranica | Hrvatska | upiti: programiranje, analitičar, QA, tehnička podrška, helpdesk, devops; nije službeni API |
+| MojPosao.hr | JSON koji koristi njihova web stranica | Hrvatska | upiti za uloge + dodatni upit po `PREFERRED_CITIES` (Zadar); nije službeni API |
 
 Svaki izvor je izoliran: ako jedan padne, ostali normalno rade (u logu piše koji je pao).
 Izvor isključiš s `DISABLED_SOURCES=himalayas,arbeitnow`.
@@ -122,6 +122,8 @@ Kriterije mijenjaš u `JOB_CRITERIA`, npr.
 `Student 2. godine FER-a, Python ili data analyst, praksa ili studentski posao, remote ili Zagreb, bez iskustva`.
 Uloge za filter (ne AI tekst) mijenjaš s `ROLE_KEYWORDS=data analyst, qa, helpdesk, devops` – to **zamjenjuje** ugrađeni popis.
 
+Traži se i dalje **cijela Hrvatska i remote**. `PREFERRED_CITIES` (zadano `Zadar`, više gradova zarezom) te oglase stavlja na vrh i u poruci označi s ⭐ i imenom grada. MojPosao dobije dodatni upit po tom gradu da zadarski oglasi ne ostanu na kasnijim stranicama zagrebačke pretrage. Posao.hr RSS nema pouzdan filter po gradu (`/rss/grad/zadar/` vraća opći feed), pa se Zadar tamo čita iz mjesta rada u IT feedu.
+
 ---
 
 ## 4. Deploy na GitHub Actions (preporučeno)
@@ -173,6 +175,7 @@ Isti ekran → kartica **Variables** → **New repository variable**. Ako varija
 | `LLM_MODEL` | `grok-4.20-non-reasoning` |
 | `JOB_CRITERIA` | ugrađeni tekst (početne tech uloge, remote ili Hrvatska, bez seniora) |
 | `ROLE_KEYWORDS` | ugrađeni popis uloga (vidi odjeljak 3) |
+| `PREFERRED_CITIES` | `Zadar` (⭐ na vrhu poruke; i dalje cijela HR + remote) |
 | `MAX_RESULTS` | `8` |
 | `MAX_AGE_HOURS` | `48` (cache se računa kao trajna pohrana) |
 | `DISABLED_SOURCES` | ništa (npr. `himalayas,arbeitnow`) |
@@ -292,6 +295,7 @@ Troši više resursa od crona, pa je cron preporučen.
 | `LLM_MODEL` | `grok-4.20-non-reasoning` | |
 | `JOB_CRITERIA` | Student bez iskustva, početne tech uloge, … | tekst kriterija za AI |
 | `ROLE_KEYWORDS` | ugrađeni popis | zarezom odvojene uloge; prazno = zadano. Senior i dalje ispada |
+| `PREFERRED_CITIES` | `Zadar` | gradovi s prednošću, zarezom; prazno = Zadar |
 | `MAX_RESULTS` | `8` | max oglasa po danu |
 | `RUN_MODE` | `cron` | `cron` / `scheduler` |
 | `RUN_AT` | `12:00` | vrijeme za scheduler mod |
