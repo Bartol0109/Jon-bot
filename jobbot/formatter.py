@@ -13,11 +13,12 @@ def _where(job):
     return "Remote" if not loc or loc.lower().startswith("remote") else f"Remote – {loc}"
 
 
-def build_messages(jobs, sender, mode="keywords"):
+def build_messages(jobs, sender, mode="keywords", empty_line=None):
     today = datetime.now(ZoneInfo(config.TZ)).strftime("%d.%m.%Y.")
     b, e = sender.bold, sender.esc
     if not jobs:
-        return [f"💼 {b('Oglasi ' + today)}\nDanas nema novih oglasa koji odgovaraju kriterijima."]
+        line = empty_line or "Danas nema novih oglasa koji odgovaraju kriterijima."
+        return [f"💼 {b('Oglasi ' + today)}\n{line}"]
     header = f"💼 {b(f'Novi oglasi za posao – {today}')}\nPronađeno: {len(jobs)} ({'AI odabir' if mode == 'llm' else 'filter po ključnim riječima'})"
     blocks = []
     for i, j in enumerate(jobs, 1):

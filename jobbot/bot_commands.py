@@ -3,15 +3,18 @@ HELP = """\
 Bok. Šaljem početne tech oglase.
 
 /pomoc — ove naredbe
-/poslovi — odmah potraži oglase i pošalji ih
+/poslovi — odmah potraži svježe oglase i pošalji ih
+/mjesec — oglasi iz zadnjih 30 dana (već poslani se ne preskaču)
 /postavke — pokaži filtre
 /dodaj riječ — dodaj ulogu, npr. /dodaj data analyst
 /makni riječ — makni ulogu
 /grad grad — dodaj grad za on-site/hybrid, npr. /grad Zagreb
 /maknigrad grad — makni grad
+/iskljuci riječ — izbaci naslove s tom riječi, npr. /iskljuci hardware
+/ukljuci riječ — vrati tu riječ u naslove
 /reset — vrati ugrađene filtre
 
-On-site i hybrid samo u gradovima s popisa. Remote: otvoren za EU ili svijet, i dovoljan je engleski (hrvatski je u redu).
+Šaljem samo oglase na engleskom ili hrvatskom. On-site i hybrid samo u gradovima s popisa. Remote: otvoren za EU ili svijet.
 Postavke su u prikvačenoj poruci. Ne briši je. Dnevni pregled u 12:00 čita iste postavke.
 Ručna pretraga ne dijeli popis već poslanih oglasa s dnevnim pregledom, pa se neki oglas može pojaviti i ujutro.
 """
@@ -39,7 +42,7 @@ def _without(items, phrase):
     return [x for x in items if x.casefold() != key]
 
 
-def handle_command(text, settings, roles_baseline, cities_baseline):
+def handle_command(text, settings, roles_baseline, cities_baseline, exclude_baseline):
     """Vrati (odgovor, nove postavke ili None ako se nisu mijenjale, akcija).
 
     akcija je "search" ili None.
@@ -58,14 +61,23 @@ def handle_command(text, settings, roles_baseline, cities_baseline):
             "Trenutni filtri:",
             _preview(settings.role_keywords, roles_baseline, "Uloge"),
             _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
-            "Remote: EU / Europe / worldwide, engleski dovoljan. Hrvatski je u redu.",
+            _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
+            "Remote: EU / Europe / worldwide. Samo engleski ili hrvatski.",
         ]
         return "\n".join(lines), None, None
     if cmd == "/poslovi":
-        return "Tražim oglase. Može potrajati minutu.", None, "search"
+        return "Tražim svježe oglase. Može potrajati minutu.", None, "search"
+    if cmd == "/mjesec":
+        return (
+            "Tražim oglase iz zadnjih 30 dana. Već poslane ne preskačem. "
+            "Neki izvori daju samo novije oglase, pa stariji mogu nedostajati. Može potrajati minutu.",
+            None,
+            "search_month",
+        )
     if cmd == "/reset":
         settings.role_keywords = None
         settings.onsite_cities = None
+        settings.exclude_keywords = None
         return "Vraćeno na ugrađene filtre.", settings, None
     if cmd == "/dodaj":
         return _add(settings, roles_baseline, arg, "role")
@@ -75,6 +87,10 @@ def handle_command(text, settings, roles_baseline, cities_baseline):
         return _add(settings, cities_baseline, arg, "city")
     if cmd == "/maknigrad":
         return _remove(settings, cities_baseline, arg, "city")
+    if cmd in ("/iskljuci", "/isključi"):
+        return _exclude_add(settings, exclude_baseline, arg)
+    if cmd in ("/ukljuci", "/uključi"):
+        return _exclude_remove(settings, exclude_baseline, arg)
     return "Nepoznata naredba. Pošalji /pomoc", None, None
 
 
@@ -120,3 +136,28 @@ def _remove(settings, baseline, arg, kind):
         return "Mora ostati barem jedan grad. On-site izvan popisa se ne šalje.", None, None
     settings.onsite_cities = new
     return f"Maknut grad: {arg}. Ostaju: {', '.join(new)}", settings, None
+
+
+def _exclude_add(settings, baseline, arg):
+    if not arg:
+        return "Napiši što isključuješ iz naslova, npr. /iskljuci hardware", None, None
+    if "," in arg:
+        return "Jedna riječ ili izraz po naredbi, bez zareza.", None, None
+    current = _effective(settings.exclude_keywords, baseline)
+    if _has(current, arg):
+        return f"«{arg}» je već isključena.", None, None
+    current.append(arg)
+    settings.exclude_keywords = current
+    return f"Naslovi s «{arg}» više ne prolaze.", settings, None
+
+
+def _exclude_remove(settings, baseline, arg):
+    if not arg:
+        return "Napiši što vraćaš, npr. /ukljuci embedded", None, None
+    current = _effective(settings.exclude_keywords, baseline)
+    if not _has(current, arg):
+        return f"«{arg}» nije na popisu isključenih.", None, None
+    settings.exclude_keywords = _without(current, arg)
+    if settings.exclude_keywords:
+        return f"«{arg}» više nije isključena.", settings, None
+    return "Nema više isključenih riječi. Naslovi se ne filtriraju po tom popisu.", settings, None

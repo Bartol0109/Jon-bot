@@ -94,7 +94,33 @@ EXCLUDED_LANGUAGES = _csv("EXCLUDED_LANGUAGES", [
     "swedish required", "danish required", "norwegian required", "finnish required",
     "swedish speaking", "danish speaking", "norwegian speaking",
     "fluent czech", "fluent hungarian", "fluent greek", "fluent romanian",
+    "native german speaker", "native french speaker", "native dutch speaker",
+    "native italian speaker", "native spanish speaker", "native polish speaker",
+    "speaks german", "speaks french", "speaks dutch", "speaks italian", "speaks spanish",
+    # Njemački/nizozemski oglasi za podršku, čak i kad je opis kratak ili na engleskom.
+    "kundenservice", "kundenbetreuer", "kundenbetreuung", "kundenberater",
+    "mitarbeiter", "mitarbeiterin", "werkstudent", "werkstudentin",
+    "stellenanzeige", "quereinsteiger", "sachbearbeiter",
+    "(m/w/d)", "(m/w/x)", "(w/m/d)", "(d/m/w)", "m/w/d",
+    "klantenservice", "medewerker", "vacature",
+    "(m/v)", "(h/f)",
 ])
+
+# Naslov koji sadrži ovu riječ nije softver/analitika/podrška. Prazno = ugrađeni popis.
+# "__NONE__" = ništa ne isključuj.
+DEFAULT_EXCLUDE_KEYWORDS = [
+    "hardware", "electronics", "electronic", "embedded", "firmware",
+    "pcb", "fpga", "asic", "rf engineer", "analog", "analogue", "circuit",
+    "electrical engineer", "mechanical",
+    "elektro", "elektroničar", "elektronicar", "elektrotehničar", "elektrotehnicar",
+    "mehatronika", "mehatroničar", "mehatronicar", "mechatronic",
+    "field technician", "hardware technician", "electronics technician",
+]
+_exclude_raw = env("EXCLUDE_KEYWORDS", "")
+if _exclude_raw == "__NONE__":
+    EXCLUDE_KEYWORDS = []
+else:
+    EXCLUDE_KEYWORDS = _csv("EXCLUDE_KEYWORDS", DEFAULT_EXCLUDE_KEYWORDS)
 
 JOB_CRITERIA = env(
     "JOB_CRITERIA",

@@ -22,14 +22,15 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("job-bot")
 
 
-def run_once(dry_run=False, sender_name=None, mark=True):
+def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, skip_seen=False, empty_line=None):
     sender = get_sender(sender_name)
     if not dry_run:
         sender.check()
     jobs, report = collect(config.DISABLED_SOURCES)
 
-    # 1) svježina (fallback dedupe po datumu)
-    cutoff = datetime.now(timezone.utc) - timedelta(hours=config.MAX_AGE_HOURS)
+    # 1) svježina: datum se poštuje kad ga izvor ima; bez datuma ostaje (izvor često da samo svježe)
+    hours = config.MAX_AGE_HOURS if max_age_hours is None else max_age_hours
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     fresh = [j for j in jobs if j.posted is None or j.posted >= cutoff]
     # 2) dedupe unutar runa
     uniq, seen_tc = {}, set()
@@ -39,14 +40,16 @@ def run_once(dry_run=False, sender_name=None, mark=True):
             uniq[j.key] = j
             seen_tc.add(tc)
     fresh = list(uniq.values())
-    # 3) dedupe naspram već poslanih
-    store = Store()
-    fresh = [j for j in fresh if not store.is_seen(j.key)]
+    # 3) dedupe naspram već poslanih (ručni /mjesec to preskače)
+    store = None
+    if not skip_seen:
+        store = Store()
+        fresh = [j for j in fresh if not store.is_seen(j.key)]
     log.info("Ukupno %d oglasa, svježih i neposlanih: %d (prozor %dh, trajna pohrana: %s)",
-             len(jobs), len(fresh), config.MAX_AGE_HOURS, config.PERSISTENT)
+             len(jobs), len(fresh), hours, config.PERSISTENT)
 
     picked, mode = rank(fresh, config.MAX_RESULTS)
-    messages = build_messages(picked, sender, mode)
+    messages = build_messages(picked, sender, mode, empty_line=empty_line)
 
     if dry_run:
         print("\n===== DRY RUN – izvori =====")
@@ -58,7 +61,7 @@ def run_once(dry_run=False, sender_name=None, mark=True):
             print("-" * 60)
         return
     sender.send_all(messages)
-    if mark:
+    if mark and store is not None:
         store.mark(picked)
     log.info("Gotovo: poslano %d oglasa u %d poruka.", len(picked), len(messages))
 
