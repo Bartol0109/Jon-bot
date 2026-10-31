@@ -17,11 +17,13 @@ MARKER = "JOBBOT_SETTINGS="
 
 
 class Settings:
-    def __init__(self, role_keywords=None, onsite_cities=None, exclude_keywords=None):
+    def __init__(self, role_keywords=None, onsite_cities=None, exclude_keywords=None, allow_remote=None):
         # None = ugrađeno / env zadano. Lista = točno te vrijednosti (i prazna).
+        # allow_remote None = uključeno (zadano).
         self.role_keywords = role_keywords
         self.onsite_cities = onsite_cities
         self.exclude_keywords = exclude_keywords
+        self.allow_remote = allow_remote
 
     def to_dict(self):
         return {
@@ -29,6 +31,7 @@ class Settings:
             "role_keywords": self.role_keywords,
             "onsite_cities": self.onsite_cities,
             "exclude_keywords": self.exclude_keywords,
+            "allow_remote": self.allow_remote,
         }
 
     def to_json(self):
@@ -47,10 +50,14 @@ def parse_settings_text(text):
     roles = data.get("role_keywords")
     cities = data.get("onsite_cities")
     excluded = data.get("exclude_keywords")
+    allow_remote = data.get("allow_remote") if "allow_remote" in data else None
+    if not isinstance(allow_remote, bool):
+        allow_remote = None
     return Settings(
         role_keywords=list(roles) if isinstance(roles, list) else None,
         onsite_cities=list(cities) if isinstance(cities, list) else None,
         exclude_keywords=list(excluded) if isinstance(excluded, list) else None,
+        allow_remote=allow_remote,
     )
 
 
@@ -66,6 +73,14 @@ def _preview(items, baseline, label):
     return f"{label}: {shown}{suffix}"
 
 
+def _remote_line(settings):
+    if settings.allow_remote is False:
+        return "Remote: isključen (samo on-site/hybrid u gradovima)"
+    if settings.allow_remote is True:
+        return "Remote: uključen"
+    return "Remote: uključen (zadano)"
+
+
 def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline):
     body = "\n".join([
         "⚙️ Postavke job bota",
@@ -74,8 +89,9 @@ def format_settings_message(settings, roles_baseline, cities_baseline, exclude_b
         _preview(settings.role_keywords, roles_baseline, "Uloge"),
         _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
         _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
+        _remote_line(settings),
         "",
-        "Remote: EU / Europe / worldwide. Samo engleski ili hrvatski.",
+        "Kad je remote uključen: EU / Europe / worldwide, samo engleski ili hrvatski.",
         MARKER + settings.to_json(),
     ])
     return body[:4000]

@@ -123,7 +123,7 @@ Kriterije mijenjaš u `JOB_CRITERIA`, npr.
 `Student 2. godine FER-a, Python ili data analyst, praksa ili studentski posao, remote ili Zagreb, bez iskustva`.
 Uloge za filter (ne AI tekst) mijenjaš s `ROLE_KEYWORDS=data analyst, qa, helpdesk, devops` – to **zamjenjuje** ugrađeni popis.
 
-**Lokacija.** On-site i hybrid samo u `ONSITE_CITIES` (zadano **Zagreb** i **Zadar**). Remote samo ako je otvoren kandidatima **bilo gdje u EU**, ili je Europe/worldwide/EMEA/CET koje EU uključuje (`REMOTE_REGIONS`). Oglas samo za Njemačku, Austriju ili SAD otpada. Oglas (naslov i opis) mora biti **na engleskom ili hrvatskom**. Ako je pretežno njemački, nizozemski, francuski ili drugi jezik, ili naslov ima tipične riječi (`Kundenservice`, `Mitarbeiter`, `(m/w/d)`, `Werkstudent`, `Kundenbetreuer`), otpada. Isto vrijedi ako oglas *traži* drugi jezik (`fluent German`, `Deutschkenntnisse`, `German speaker`, `native Dutch` — popis je `EXCLUDED_LANGUAGES`). Hrvatski je u redu. Naslov s riječima iz `EXCLUDE_KEYWORDS` (zadano hardware, electronics, embedded, firmware, PCB, FPGA, elektro, mehatronika, field technician, …) također otpada — to nije softver, analitika ni podrška. `/iskljuci` i `/ukljuci` mijenjaju taj popis, i vrijedi za dnevni pregled, `/poslovi` i `/mjesec`. U poruci stoji `⭐ Zagreb`, `⭐ Zadar` (ili `· hibrid`) odnosno `🌍 Remote`.
+**Lokacija.** On-site i hybrid samo u `ONSITE_CITIES` (zadano **Zagreb** i **Zadar**). Remote samo ako je otvoren kandidatima **bilo gdje u EU**, ili je Europe/worldwide/EMEA/CET koje EU uključuje (`REMOTE_REGIONS`). Oglas samo za Njemačku, Austriju ili SAD otpada. Oglas (naslov i opis) mora biti **na engleskom ili hrvatskom**. Ako je pretežno njemački, nizozemski, francuski ili drugi jezik, ili naslov ima tipične riječi (`Kundenservice`, `Mitarbeiter`, `(m/w/d)`, `Werkstudent`, `Kundenbetreuer`), otpada. Isto vrijedi ako oglas *traži* drugi jezik (`fluent German`, `Deutschkenntnisse`, `German speaker`, `native Dutch` — popis je `EXCLUDED_LANGUAGES`). Hrvatski je u redu. Naslov s riječima iz `EXCLUDE_KEYWORDS` (zadano hardware, electronics, embedded, firmware, PCB, FPGA, elektro, mehatronika, field technician, …) također otpada — to nije softver, analitika ni podrška. `/iskljuci` i `/ukljuci` mijenjaju taj popis. `/remote off` (ili `/bezremote`) isključi sve remote oglase; ostaju samo on-site i hybrid u gradovima. `/remote on` ih vraća. Zadano je uključeno. Vrijedi za dnevni pregled, `/poslovi` i `/mjesec`. U poruci stoji `⭐ Zagreb`, `⭐ Zadar` (ili `· hibrid`) odnosno `🌍 Remote`.
 
 ---
 
@@ -251,6 +251,9 @@ Ručni `/poslovi` ne dijeli bazu već poslanih oglasa s Actions cacheom, pa se i
 | `/maknigrad Zagreb` | makni grad (zadnji ne može) |
 | `/iskljuci hardware` | izbaci naslove koji sadrže tu riječ |
 | `/ukljuci hardware` | vrati tu riječ (naslov opet može proći) |
+| `/remote` | jesu li remote oglasi uključeni |
+| `/remote off`, `/bezremote` | samo on-site/hybrid u gradovima |
+| `/remote on` | opet šalji i remote |
 | `/reset` | vrati ugrađene filtre |
 
 Bot odgovara samo chatu iz `TELEGRAM_CHAT_ID`. Zahtjev mora imati zaglavlje `X-Telegram-Bot-Api-Secret-Token` jednak `WEBHOOK_SECRET`.

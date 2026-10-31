@@ -21,6 +21,8 @@ def export_lines(settings):
     if settings.exclude_keywords is not None:
         value = ",".join(settings.exclude_keywords) if settings.exclude_keywords else "__NONE__"
         lines.append(("EXCLUDE_KEYWORDS", value))
+    if settings.allow_remote is not None:
+        lines.append(("ALLOW_REMOTE", "1" if settings.allow_remote else "0"))
     return lines
 
 

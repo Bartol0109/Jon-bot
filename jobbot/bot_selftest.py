@@ -42,8 +42,17 @@ def test_commands():
     check(action == "search" and "Tražim" in reply, reply)
     reply, _, action = handle_command("/mjesec", s, roles, cities, excluded)
     check(action == "search_month" and "30" in reply, reply)
+    reply, updated, _ = handle_command("/remote", s, roles, cities, excluded)
+    check(updated is None and "uključen" in reply, reply)
+    reply, updated, _ = handle_command("/remote off", s, roles, cities, excluded)
+    check(updated is s and s.allow_remote is False and "isključeni" in reply, reply)
+    reply, updated, _ = handle_command("/bezremote", s, roles, cities, excluded)
+    check(s.allow_remote is False, reply)
+    reply, updated, _ = handle_command("/remote on", s, roles, cities, excluded)
+    check(s.allow_remote is True and "uključeni" in reply, reply)
     reply, updated, _ = handle_command("/reset", s, roles, cities, excluded)
     check(s.role_keywords is None and s.onsite_cities is None and s.exclude_keywords is None, reply)
+    check(s.allow_remote is None, "reset remote")
     text = format_settings_message(
         Settings(role_keywords=["qa"], onsite_cities=["Zadar"], exclude_keywords=["fpga"]),
         roles, cities, excluded,
@@ -51,6 +60,10 @@ def test_commands():
     parsed = parse_settings_text(text)
     check(parsed.role_keywords == ["qa"] and parsed.onsite_cities == ["Zadar"], text)
     check(parsed.exclude_keywords == ["fpga"], text)
+    off_text = format_settings_message(Settings(allow_remote=False), roles, cities, excluded)
+    check(parse_settings_text(off_text).allow_remote is False, off_text)
+    old_pin = 'JOBBOT_SETTINGS={"v":1,"role_keywords":null,"onsite_cities":null}'
+    check(parse_settings_text(old_pin).allow_remote is None, "stari pin")
     check("Isključeno" in text, text)
     check(parse_settings_text("običan tekst") is None, "bez markera")
     reply, updated, _ = handle_command("/start", Settings(), roles, cities, excluded)
@@ -108,6 +121,20 @@ def test_language_and_exclude():
     titles = [j.title for j in kept]
     check(titles == ["Junior Software Engineer", "Mlađi inženjer za podršku"], titles)
 
+    from jobbot import config
+    remote_job = job("Junior Developer", en, loc="Europe", remote=True)
+    zagreb = job("Junior Software Engineer", en, loc="Zagreb", remote=False, scope="hr")
+    hybrid = job("Hybrid Developer", en, loc="Zadar", remote=False, scope="hr")
+    old = config.ALLOW_REMOTE
+    try:
+        config.ALLOW_REMOTE = False
+        check(not location_ok(remote_job), "remote off")
+        check(location_ok(zagreb) and location_ok(hybrid), "gradovi ostaju")
+        config.ALLOW_REMOTE = True
+        check(location_ok(remote_job), "remote on")
+    finally:
+        config.ALLOW_REMOTE = old
+
 
 def test_webhook():
     calls = []
@@ -142,6 +169,9 @@ def test_github_env(path):
     check("ROLE_KEYWORDS<<JOBBOT_EOF" in text and "\nqa\n" in text, text)
     check("ONSITE_CITIES<<JOBBOT_EOF" in text and "Zadar" in text, text)
     check(write_github_env(Settings(), path + ".empty") is False, "prazan pin")
+    off = os.path.join(os.path.dirname(path), "off")
+    write_github_env(Settings(allow_remote=False), off)
+    check("ALLOW_REMOTE<<JOBBOT_EOF\n0\n" in open(off, encoding="utf-8").read(), "remote off")
 
 
 def main():

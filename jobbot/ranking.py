@@ -195,12 +195,14 @@ def location_ok(job: Job) -> bool:
     if not english_sufficient(job):
         return False
     mode = work_mode(job)
-    if mode in ("onsite", "hybrid"):
-        return bool(matched_cities(job))
-    # Remote s hrvatskih portala računa se (kandidat je u Hrvatskoj).
-    if job.scope == "hr":
-        return True
-    return remote_open(job.location or "")
+    if mode == "remote":
+        if not config.ALLOW_REMOTE:
+            return False
+        # Remote s hrvatskih portala računa se (kandidat je u Hrvatskoj).
+        if job.scope == "hr":
+            return True
+        return remote_open(job.location or "")
+    return bool(matched_cities(job))
 
 
 def place_tag(job: Job) -> str:

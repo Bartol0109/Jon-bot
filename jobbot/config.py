@@ -122,6 +122,10 @@ if _exclude_raw == "__NONE__":
 else:
     EXCLUDE_KEYWORDS = _csv("EXCLUDE_KEYWORDS", DEFAULT_EXCLUDE_KEYWORDS)
 
+# 1/true = šalji remote. 0/false/off = samo on-site/hybrid u ONSITE_CITIES. Prazno = uključeno.
+_remote_raw = env("ALLOW_REMOTE", "")
+ALLOW_REMOTE = _remote_raw.lower() not in ("0", "false", "off", "ne", "no") if _remote_raw else True
+
 JOB_CRITERIA = env(
     "JOB_CRITERIA",
     "Student bez iskustva. Početne uloge: programiranje, data/business/BI analitičar, QA i testiranje, "

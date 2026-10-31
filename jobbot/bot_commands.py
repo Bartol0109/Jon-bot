@@ -12,6 +12,9 @@ Bok. Šaljem početne tech oglase.
 /maknigrad grad — makni grad
 /iskljuci riječ — izbaci naslove s tom riječi, npr. /iskljuci hardware
 /ukljuci riječ — vrati tu riječ u naslove
+/remote — jesu li remote oglasi uključeni
+/remote off ili /bezremote — samo on-site/hybrid u gradovima
+/remote on — opet šalji i remote
 /reset — vrati ugrađene filtre
 
 Šaljem samo oglase na engleskom ili hrvatskom. On-site i hybrid samo u gradovima s popisa. Remote: otvoren za EU ili svijet.
@@ -26,6 +29,27 @@ def split_command(text):
         return None, ""
     first, _, rest = text.partition(" ")
     return first.split("@", 1)[0].lower(), rest.strip()
+
+
+def _remote_state(settings):
+    if settings.allow_remote is False:
+        return "Remote: isključen (samo on-site/hybrid u gradovima)"
+    if settings.allow_remote is True:
+        return "Remote: uključen"
+    return "Remote: uključen (zadano)"
+
+
+def _remote_cmd(settings, arg):
+    word = (arg or "").casefold()
+    if word in ("off", "0", "ne", "iskljuci", "isključi"):
+        settings.allow_remote = False
+        return "Remote oglasi su isključeni. Ostaju samo on-site i hybrid u tvojim gradovima.", settings, None
+    if word in ("on", "1", "da", "ukljuci", "uključi"):
+        settings.allow_remote = True
+        return "Remote oglasi su uključeni.", settings, None
+    if not word:
+        return _remote_state(settings) + ". /remote off ili /remote on.", None, None
+    return "Koristi /remote, /remote on ili /remote off.", None, None
 
 
 def _effective(custom, baseline):
@@ -62,7 +86,7 @@ def handle_command(text, settings, roles_baseline, cities_baseline, exclude_base
             _preview(settings.role_keywords, roles_baseline, "Uloge"),
             _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
             _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
-            "Remote: EU / Europe / worldwide. Samo engleski ili hrvatski.",
+            _remote_state(settings),
         ]
         return "\n".join(lines), None, None
     if cmd == "/poslovi":
@@ -78,7 +102,13 @@ def handle_command(text, settings, roles_baseline, cities_baseline, exclude_base
         settings.role_keywords = None
         settings.onsite_cities = None
         settings.exclude_keywords = None
+        settings.allow_remote = None
         return "Vraćeno na ugrađene filtre.", settings, None
+    if cmd in ("/bezremote",):
+        settings.allow_remote = False
+        return "Remote oglasi su isključeni. Ostaju samo on-site i hybrid u tvojim gradovima.", settings, None
+    if cmd == "/remote":
+        return _remote_cmd(settings, arg)
     if cmd == "/dodaj":
         return _add(settings, roles_baseline, arg, "role")
     if cmd == "/makni":
