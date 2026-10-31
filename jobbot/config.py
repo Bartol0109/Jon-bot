@@ -61,7 +61,8 @@ def _csv(name, default):
 
 
 # On-site i hybrid samo u ovim gradovima. Prazno = Zagreb, Zadar.
-ONSITE_CITIES = _csv("ONSITE_CITIES", ["Zagreb", "Zadar"])
+DEFAULT_ONSITE_CITIES = ["Zagreb", "Zadar"]
+ONSITE_CITIES = _csv("ONSITE_CITIES", DEFAULT_ONSITE_CITIES)
 # Remote mora biti otvoren kandidatima bilo gdje u EU, ili Europe/worldwide koje uključuje EU.
 # Jedna država (npr. samo Njemačka) nije dovoljna. Prazno = ovaj popis.
 REMOTE_REGIONS = _csv("REMOTE_REGIONS", [
@@ -117,6 +118,8 @@ TWILIO_WHATSAPP_FROM = env("TWILIO_WHATSAPP_FROM", "whatsapp:+14155238886")
 TWILIO_WHATSAPP_TO = env("TWILIO_WHATSAPP_TO")
 TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = env("TELEGRAM_CHAT_ID")
+# Tajna u zaglavlju X-Telegram-Bot-Api-Secret-Token. Prazno = webhook odbija sve.
+WEBHOOK_SECRET = env("WEBHOOK_SECRET")
 
 # Izvori koje želiš isključiti, npr. "himalayas,arbeitnow"
 DISABLED_SOURCES = {s.strip().lower() for s in env("DISABLED_SOURCES").split(",") if s.strip()}

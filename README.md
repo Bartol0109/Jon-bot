@@ -222,6 +222,62 @@ Ako je GitHub već ugasio workflow, keepalive se sam ne može upaliti. Uključi 
 
 Isto radi `gh workflow enable "Dnevni job bot"` i `gh workflow enable "Održavanje rasporeda"`. Propušteni dani se ne nadoknađuju unazad osim kroz jutarnju nadoknadu iz odjeljka 4, i to samo ako je workflow uopće upaljen.
 
+Dnevni pregled prije slanja pročita **prikvačenu Telegram poruku** s postavkama (ako postoji). Zato `/dodaj` i `/grad` u chatu vrijede i za poruku u 12:00. Vidi odjeljak 5.
+
+---
+
+## 5. Telegram naredbe na Renderu (besplatno)
+
+Osim dnevnog pregleda na GitHub Actions, možeš pisati botu. To je mali web servis (`webapp.py`) na [Render](https://render.com) **free** planu. Besplatni web servis zaspi nakon otprilike 15 minuta tišine i nema stalni disk ni background worker. Zato:
+
+- Telegram šalje poruku na **webhook** (ulazni HTTPS zahtjev budi servis),
+- servis odmah vrati 200, a `/poslovi` traži oglase u pozadini,
+- postavke nisu na disku: bot ih drži u **prikvačenoj poruci** u tvom chatu (JSON red `JOBBOT_SETTINGS=…`). To ne košta i preživi restart. Dnevni GitHub Actions čita istu poruku. Poruku nemoj brisati ni otkvačivati. Ako je nema, vrijede ugrađeni filtri i Variables.
+
+Ručni `/poslovi` ne dijeli bazu već poslanih oglasa s Actions cacheom, pa se isti oglas može pojaviti i u jutarnjoj poruci.
+
+### 5.1 Naredbe
+
+| Naredba | Što radi |
+|---|---|
+| `/start`, `/pomoc` | pomoć |
+| `/poslovi` | odmah potraži i pošalji |
+| `/postavke` | pokaži uloge i gradove |
+| `/dodaj data analyst` | dodaj ulogu |
+| `/makni data analyst` | makni ulogu |
+| `/grad Zagreb` | dodaj grad za on-site/hybrid |
+| `/maknigrad Zagreb` | makni grad (zadnji ne može) |
+| `/reset` | vrati ugrađene filtre |
+
+Bot odgovara samo chatu iz `TELEGRAM_CHAT_ID`. Zahtjev mora imati zaglavlje `X-Telegram-Bot-Api-Secret-Token` jednak `WEBHOOK_SECRET`.
+
+### 5.2 Deploy
+
+1. Na https://render.com napravi račun i **New → Blueprint**. Spoji GitHub repozitorij `Jon-bot` i granu `main` (nakon mergea). Render čita `render.yaml` (plan: free, health check `/health`).
+2. U servisu **Environment** upiši:
+   - `TELEGRAM_BOT_TOKEN` — token od BotFathera
+   - `TELEGRAM_CHAT_ID` — tvoj chat (vidi odjeljak 2.B)
+   - `WEBHOOK_SECRET` — Blueprint ga sam generira; možeš ga ostaviti ili upisati svoj dugačak nasumičan niz
+   Ostalo (`SENDER=telegram`) već stoji u `render.yaml`. `LLM_API_KEY` je opcionalan ako želiš AI rangiranje i na ručnoj pretrazi.
+3. Pričekaj da deploy prođe. Prvi `GET /health` smije trajati dok se servis budi. URL je oblika `https://job-bot-xxxx.onrender.com`.
+4. Uključi webhook. U Renderu otvori **Shell** pokrenutog servisa i pokreni:
+
+```bash
+python -m jobbot.set_webhook
+```
+
+Mora ispisati `Webhook postavljen: https://…/telegram/webhook`. Isto radi, s bilo kojeg računala:
+
+```bash
+curl -X POST "$RENDER_URL/telegram/setup" -H "X-Setup-Token: $WEBHOOK_SECRET"
+```
+
+(`RENDER_URL` je adresa servisa. `WEBHOOK_SECRET` je vrijednost iz Environment.)
+5. U Telegramu otvori bota i pošalji `/start`. Trebao bi prikvačiti poruku s postavkama. Zatim `/postavke`, `/dodaj data analyst`, `/poslovi`.
+6. Ako je servis spavao, prva poruka može kasniti pola minute dok se Render budi. Sljedeće su brže. `/poslovi` nakon toga još traži oglase (desetak sekundi i više).
+
+Dnevni pregled i dalje ide s GitHub Actions u 12:00. Na Actions trebaju isti `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` (Secrets), inače se pin ne može pročitati i ostaju zadani filtri.
+
 ---
 
 ## Alternativa: deploy na Railway
@@ -313,6 +369,8 @@ Troši više resursa od crona, pa je cron preporučen.
 ## Struktura
 ```
 main.py                          CLI: --dry-run, --test-whatsapp, --sender, --mode, --telegram-chat-id
+webapp.py                        Telegram webhook (FastAPI) za Render
+render.yaml                      Render Blueprint, free plan
 jobbot/sources.py                izvori oglasa (svaki izoliran)
 jobbot/ranking.py                keyword filter + LLM rangiranje
 jobbot/formatter.py              poruka na hrvatskom + dijeljenje na dijelove

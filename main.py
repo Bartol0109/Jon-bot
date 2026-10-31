@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("job-bot")
 
 
-def run_once(dry_run=False, sender_name=None):
+def run_once(dry_run=False, sender_name=None, mark=True):
     sender = get_sender(sender_name)
     if not dry_run:
         sender.check()
@@ -58,7 +58,8 @@ def run_once(dry_run=False, sender_name=None):
             print("-" * 60)
         return
     sender.send_all(messages)
-    store.mark(picked)
+    if mark:
+        store.mark(picked)
     log.info("Gotovo: poslano %d oglasa u %d poruka.", len(picked), len(messages))
 
 

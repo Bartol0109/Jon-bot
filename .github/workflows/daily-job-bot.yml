@@ -42,6 +42,11 @@ jobs:
       - name: Samoprovjera once-per-day guard
         run: python .github/scripts/should_send.py --self-test
 
+      - name: Samoprovjera Telegram naredbi
+        run: |
+          pip install -r requirements.txt httpx
+          python -m jobbot.bot_selftest
+
   run:
     name: run
     needs: guard-test
@@ -91,6 +96,9 @@ jobs:
 
       - name: Instaliraj ovisnosti
         run: pip install -r requirements.txt
+
+      - name: Učitaj postavke iz prikvačene Telegram poruke
+        run: python -m jobbot.sync_settings
 
       # data/ je u .gitignore, a cache action zna preskočiti ignorirane
       # datoteke. Stanje zato ide u RUNNER_TEMP: nije u gitu i nema tajni.

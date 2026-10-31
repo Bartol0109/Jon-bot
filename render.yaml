@@ -1,0 +1,24 @@
+# Besplatni web servis. Spava nakon ~15 min tišine; ulazni Telegram webhook ga budi.
+# Nema diska: postavke su u prikvačenoj Telegram poruci (vidi README).
+services:
+  - type: web
+    name: job-bot
+    runtime: python
+    plan: free
+    region: frankfurt
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn webapp:app --host 0.0.0.0 --port $PORT
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.0"
+      - key: SENDER
+        value: telegram
+      - key: TZ_NAME
+        value: Europe/Zagreb
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WEBHOOK_SECRET
+        generateValue: true

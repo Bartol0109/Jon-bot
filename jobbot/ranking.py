@@ -27,6 +27,16 @@ def _role_pattern(keywords):
 
 
 ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
+
+
+def refresh_filters():
+    """Ponovno složi uzorke nakon što naredba promijeni uloge ili gradove."""
+    global ROLE_RE, REGION_RE, LANG_RE
+    ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
+    REGION_RE = _terms_re(config.REMOTE_REGIONS)
+    LANG_RE = _terms_re(config.EXCLUDED_LANGUAGES)
+
+
 ENTRY = r"junior|\bjr\b|intern|internship|trainee|student|graduate|entry[- ]level|entry|apprentice|werkstudent|" \
         r"praksa|pripravnik|stručno osposobljavanje|studentski|početni|bez iskustva|no experience|early career|new grad"
 SENIOR = r"senior|\bsr\b|lead|principal|staff|head of|director|architect|manager|\bmid\b|medior|expert|" \
