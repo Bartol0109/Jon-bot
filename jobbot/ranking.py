@@ -31,11 +31,12 @@ ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
 
 def refresh_filters():
     """Ponovno složi uzorke nakon što naredba promijeni uloge ili gradove."""
-    global ROLE_RE, REGION_RE, LANG_RE, EXCLUDE_RE
+    global ROLE_RE, REGION_RE, LANG_RE, EXCLUDE_RE, NARROW_RE
     ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
     REGION_RE = _terms_re(config.REMOTE_REGIONS)
     LANG_RE = _terms_re(config.EXCLUDED_LANGUAGES)
     EXCLUDE_RE = _exclude_re(config.EXCLUDE_KEYWORDS)
+    NARROW_RE = _terms_re(config.NARROW_KEYWORDS)
 
 
 ENTRY = r"junior|\bjr\b|intern|internship|trainee|student|graduate|entry[- ]level|entry|apprentice|werkstudent|" \
@@ -92,6 +93,12 @@ def _exclude_re(terms):
 
 
 EXCLUDE_RE = _exclude_re(config.EXCLUDE_KEYWORDS)
+NARROW_RE = _terms_re(config.NARROW_KEYWORDS)
+
+
+def active_role_re():
+    """Uski način gleda uži popis; inače široke uloge."""
+    return NARROW_RE if config.NARROW_MODE else ROLE_RE
 
 
 def title_excluded(job: Job) -> bool:
@@ -195,12 +202,14 @@ def location_ok(job: Job) -> bool:
     if not english_sufficient(job):
         return False
     mode = work_mode(job)
-    if mode in ("onsite", "hybrid"):
-        return bool(matched_cities(job))
-    # Remote s hrvatskih portala računa se (kandidat je u Hrvatskoj).
-    if job.scope == "hr":
-        return True
-    return remote_open(job.location or "")
+    if mode == "remote":
+        if not config.ALLOW_REMOTE:
+            return False
+        # Remote s hrvatskih portala računa se (kandidat je u Hrvatskoj).
+        if job.scope == "hr":
+            return True
+        return remote_open(job.location or "")
+    return bool(matched_cities(job))
 
 
 def place_tag(job: Job) -> str:
@@ -223,7 +232,7 @@ def prefilter(jobs):
     for j in jobs:
         # Samo naslov: tagovi izvora (RemoteOK, RSS slug) su preširoki
         # ("testing", "devops" na cijelom feedu) i povuku poslove izvan uloge.
-        if not ROLE_RE.search(j.title) or SENIOR_RE.search(j.title) or NOT_DEV_RE.search(j.title):
+        if not active_role_re().search(j.title) or SENIOR_RE.search(j.title) or NOT_DEV_RE.search(j.title):
             continue
         if title_excluded(j):
             continue
@@ -247,7 +256,7 @@ def keyword_rank(jobs, limit):
         elif ENTRY_RE.search(title_tags):
             j.score, j.reason = 4 + bonus, "Oznake oglasa upućuju na početnu razinu."
             entry.append(j)
-        elif ROLE_RE.search(j.title) and not EXP_RE.search(j.description):
+        elif active_role_re().search(j.title) and not EXP_RE.search(j.description):
             j.score = 1 + bonus + (1 if ENTRY_RE.search(j.description) else 0)
             j.reason = "Nije označen kao senior i ne traži godine iskustva – provjeri uvjete."
             neutral.append(j)

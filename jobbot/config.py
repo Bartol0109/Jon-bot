@@ -122,6 +122,30 @@ if _exclude_raw == "__NONE__":
 else:
     EXCLUDE_KEYWORDS = _csv("EXCLUDE_KEYWORDS", DEFAULT_EXCLUDE_KEYWORDS)
 
+# Uski način: naslov mora pogoditi ovaj popis umjesto širokih uloga. Prazno = ugrađeni popis.
+DEFAULT_NARROW_KEYWORDS = [
+    "frontend", "front-end", "web developer", "web dev",
+    "javascript", "react", "vue", "html/css", "tailwind", "wordpress", "php",
+    "node.js", "nodejs", "full stack", "fullstack", "full-stack",
+    "ui/ux", "ui designer", "ux designer", "product designer", "web designer",
+    "graphic designer", "grafički dizajner", "graficki dizajner", "građički dizajner",
+    "multimedia", "multimedija", "unity", "c#", "game developer", "game dev",
+    "ios developer", "swift", "mobile developer",
+    "video editor", "motion designer", "content creator", "digital media",
+]
+_narrow_kw = env("NARROW_KEYWORDS", "")
+if _narrow_kw == "__NONE__":
+    NARROW_KEYWORDS = []
+else:
+    NARROW_KEYWORDS = _csv("NARROW_KEYWORDS", DEFAULT_NARROW_KEYWORDS)
+# 1/on = uski popis. Prazno ili 0 = široki filtri (programiranje, analitika, podrška).
+_narrow_mode = env("NARROW_MODE", "")
+NARROW_MODE = _narrow_mode.lower() in ("1", "true", "on", "da", "yes")
+
+# 1/true = šalji remote. 0/false/off = samo on-site/hybrid u ONSITE_CITIES. Prazno = uključeno.
+_remote_raw = env("ALLOW_REMOTE", "")
+ALLOW_REMOTE = _remote_raw.lower() not in ("0", "false", "off", "ne", "no") if _remote_raw else True
+
 JOB_CRITERIA = env(
     "JOB_CRITERIA",
     "Student bez iskustva. Početne uloge: programiranje, data/business/BI analitičar, QA i testiranje, "

@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from jobbot import config
 from jobbot.bot_commands import handle_command
-from jobbot.runtime import ENV_CITIES, ENV_EXCLUDE, ENV_ROLES, apply
+from jobbot.runtime import ENV_CITIES, ENV_EXCLUDE, ENV_NARROW, ENV_ROLES, apply
 from jobbot.set_webhook import set_webhook
 from jobbot.settings_store import TelegramSettingsStore
 
@@ -51,9 +51,9 @@ def _send_plain(text: str):
 def process_message(text: str):
     settings = _store.load()
     apply(settings)
-    reply, updated, action = handle_command(text, settings, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE)
+    reply, updated, action = handle_command(text, settings, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE, ENV_NARROW)
     if updated is not None:
-        _store.save(updated, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE)
+        _store.save(updated, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE, ENV_NARROW)
         apply(updated)
     if reply:
         _send_plain(reply)
