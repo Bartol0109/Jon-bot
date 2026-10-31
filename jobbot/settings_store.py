@@ -17,13 +17,16 @@ MARKER = "JOBBOT_SETTINGS="
 
 
 class Settings:
-    def __init__(self, role_keywords=None, onsite_cities=None, exclude_keywords=None, allow_remote=None):
+    def __init__(self, role_keywords=None, onsite_cities=None, exclude_keywords=None,
+                 allow_remote=None, narrow_mode=None, narrow_keywords=None):
         # None = ugrađeno / env zadano. Lista = točno te vrijednosti (i prazna).
-        # allow_remote None = uključeno (zadano).
+        # allow_remote None = uključeno. narrow_mode None = isključeno (široki filtri).
         self.role_keywords = role_keywords
         self.onsite_cities = onsite_cities
         self.exclude_keywords = exclude_keywords
         self.allow_remote = allow_remote
+        self.narrow_mode = narrow_mode
+        self.narrow_keywords = narrow_keywords
 
     def to_dict(self):
         return {
@@ -32,6 +35,8 @@ class Settings:
             "onsite_cities": self.onsite_cities,
             "exclude_keywords": self.exclude_keywords,
             "allow_remote": self.allow_remote,
+            "narrow_mode": self.narrow_mode,
+            "narrow_keywords": self.narrow_keywords,
         }
 
     def to_json(self):
@@ -53,11 +58,17 @@ def parse_settings_text(text):
     allow_remote = data.get("allow_remote") if "allow_remote" in data else None
     if not isinstance(allow_remote, bool):
         allow_remote = None
+    narrow_mode = data.get("narrow_mode") if "narrow_mode" in data else None
+    if not isinstance(narrow_mode, bool):
+        narrow_mode = None
+    narrow = data.get("narrow_keywords")
     return Settings(
         role_keywords=list(roles) if isinstance(roles, list) else None,
         onsite_cities=list(cities) if isinstance(cities, list) else None,
         exclude_keywords=list(excluded) if isinstance(excluded, list) else None,
         allow_remote=allow_remote,
+        narrow_mode=narrow_mode,
+        narrow_keywords=list(narrow) if isinstance(narrow, list) else None,
     )
 
 
@@ -81,7 +92,15 @@ def _remote_line(settings):
     return "Remote: uključen (zadano)"
 
 
-def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline):
+def _narrow_line(settings):
+    if settings.narrow_mode is True:
+        return "Uski način: uključen (naslov mora pogoditi uži popis)"
+    if settings.narrow_mode is False:
+        return "Uski način: isključen (programiranje, analitika, podrška)"
+    return "Uski način: isključen (zadano)"
+
+
+def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
     body = "\n".join([
         "⚙️ Postavke job bota",
         "Ova poruka je prikvačena. Ne briši je — dnevni pregled u 12:00 čita iste postavke.",
@@ -90,6 +109,8 @@ def format_settings_message(settings, roles_baseline, cities_baseline, exclude_b
         _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
         _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
         _remote_line(settings),
+        _narrow_line(settings),
+        _preview(settings.narrow_keywords, narrow_baseline, "Uski popis (naslov)"),
         "",
         "Kad je remote uključen: EU / Europe / worldwide, samo engleski ili hrvatski.",
         MARKER + settings.to_json(),
@@ -127,10 +148,10 @@ class TelegramSettingsStore:
         parsed = parse_settings_text(_message_text(chat.get("pinned_message")))
         return parsed if parsed is not None else Settings()
 
-    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline):
+    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
         if not config.TELEGRAM_CHAT_ID:
             raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
-        text = format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline)
+        text = format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
         chat = _api("getChat", {"chat_id": config.TELEGRAM_CHAT_ID}) or {}
         pinned = chat.get("pinned_message") or {}
         pinned_text = _message_text(pinned)

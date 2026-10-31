@@ -15,6 +15,11 @@ Bok. Šaljem početne tech oglase.
 /remote — jesu li remote oglasi uključeni
 /remote off ili /bezremote — samo on-site/hybrid u gradovima
 /remote on — opet šalji i remote
+/usko — je li uski način uključen
+/usko on — naslov mora pogoditi uži popis (frontend, dizajn, unity, …)
+/usko off — vrati široke filtre (programiranje, analitika, podrška)
+/usko dodaj riječ — dodaj u uži popis
+/usko makni riječ — makni iz užeg popisa
 /reset — vrati ugrađene filtre
 
 Šaljem samo oglase na engleskom ili hrvatskom. On-site i hybrid samo u gradovima s popisa. Remote: otvoren za EU ili svijet.
@@ -52,6 +57,58 @@ def _remote_cmd(settings, arg):
     return "Koristi /remote, /remote on ili /remote off.", None, None
 
 
+def _usko_state(settings):
+    if settings.narrow_mode is True:
+        return "Uski način: uključen"
+    if settings.narrow_mode is False:
+        return "Uski način: isključen"
+    return "Uski način: isključen (zadano)"
+
+
+def _usko_cmd(settings, arg, baseline):
+    head, _, rest = (arg or "").partition(" ")
+    word = head.casefold()
+    if not word:
+        return _usko_state(settings) + ". /usko on, /usko off, /usko dodaj, /usko makni.", None, None
+    if word in ("on", "1", "da"):
+        settings.narrow_mode = True
+        return "Uski način je uključen. Naslov mora odgovarati užem popisu.", settings, None
+    if word in ("off", "0", "ne"):
+        settings.narrow_mode = False
+        return "Uski način je isključen. Vrijede širi filtri (programiranje, analitika, podrška).", settings, None
+    if word == "dodaj":
+        return _narrow_add(settings, baseline, rest.strip())
+    if word == "makni":
+        return _narrow_remove(settings, baseline, rest.strip())
+    return "Koristi /usko, /usko on, /usko off, /usko dodaj riječ ili /usko makni riječ.", None, None
+
+
+def _narrow_add(settings, baseline, arg):
+    if not arg:
+        return "Napiši što dodaješ, npr. /usko dodaj tailwind", None, None
+    if "," in arg:
+        return "Jedna riječ ili izraz po naredbi, bez zareza.", None, None
+    current = _effective(settings.narrow_keywords, baseline)
+    if _has(current, arg):
+        return f"«{arg}» je već u uskom popisu.", None, None
+    current.append(arg)
+    settings.narrow_keywords = current
+    return f"U uži popis dodano: {arg}", settings, None
+
+
+def _narrow_remove(settings, baseline, arg):
+    if not arg:
+        return "Napiši što mičeš, npr. /usko makni unity", None, None
+    current = _effective(settings.narrow_keywords, baseline)
+    if not _has(current, arg):
+        return f"«{arg}» nije u uskom popisu.", None, None
+    new = _without(current, arg)
+    if not new:
+        return "U užem popisu mora ostati barem jedna riječ.", None, None
+    settings.narrow_keywords = new
+    return f"Iz užeg popisa maknuto: {arg}", settings, None
+
+
 def _effective(custom, baseline):
     return list(custom) if custom is not None else list(baseline)
 
@@ -66,7 +123,7 @@ def _without(items, phrase):
     return [x for x in items if x.casefold() != key]
 
 
-def handle_command(text, settings, roles_baseline, cities_baseline, exclude_baseline):
+def handle_command(text, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
     """Vrati (odgovor, nove postavke ili None ako se nisu mijenjale, akcija).
 
     akcija je "search" ili None.
@@ -87,6 +144,7 @@ def handle_command(text, settings, roles_baseline, cities_baseline, exclude_base
             _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
             _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
             _remote_state(settings),
+            _usko_state(settings),
         ]
         return "\n".join(lines), None, None
     if cmd == "/poslovi":
@@ -103,12 +161,16 @@ def handle_command(text, settings, roles_baseline, cities_baseline, exclude_base
         settings.onsite_cities = None
         settings.exclude_keywords = None
         settings.allow_remote = None
+        settings.narrow_mode = None
+        settings.narrow_keywords = None
         return "Vraćeno na ugrađene filtre.", settings, None
     if cmd in ("/bezremote",):
         settings.allow_remote = False
         return "Remote oglasi su isključeni. Ostaju samo on-site i hybrid u tvojim gradovima.", settings, None
     if cmd == "/remote":
         return _remote_cmd(settings, arg)
+    if cmd == "/usko":
+        return _usko_cmd(settings, arg, narrow_baseline)
     if cmd == "/dodaj":
         return _add(settings, roles_baseline, arg, "role")
     if cmd == "/makni":

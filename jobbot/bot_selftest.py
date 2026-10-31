@@ -22,53 +22,64 @@ def test_commands():
     roles = ["developer", "qa"]
     cities = ["Zagreb", "Zadar"]
     excluded = ["hardware", "firmware"]
+    narrow = ["react", "unity"]
     s = Settings()
-    reply, updated, action = handle_command("/dodaj data analyst", s, roles, cities, excluded)
+    reply, updated, action = handle_command("/dodaj data analyst", s, roles, cities, excluded, narrow)
     check(updated is s and "data analyst" in s.role_keywords, reply)
     check(action is None, "dodaj ne smije pokrenuti pretragu")
-    reply, updated, _ = handle_command("/dodaj data analyst", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/dodaj data analyst", s, roles, cities, excluded, narrow)
     check(updated is None and "već" in reply, reply)
-    reply, updated, _ = handle_command("/makni QA", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/makni QA", s, roles, cities, excluded, narrow)
     check(updated is s and not any(x.casefold() == "qa" for x in s.role_keywords), reply)
-    reply, updated, _ = handle_command("/grad Šibenik", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/grad Šibenik", s, roles, cities, excluded, narrow)
     check("Šibenik" in s.onsite_cities, reply)
-    reply, updated, _ = handle_command("/maknigrad Zagreb", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/maknigrad Zagreb", s, roles, cities, excluded, narrow)
     check("Zagreb" not in s.onsite_cities and "Zadar" in s.onsite_cities, reply)
-    reply, updated, _ = handle_command("/iskljuci pcb", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/iskljuci pcb", s, roles, cities, excluded, narrow)
     check(updated is s and "pcb" in s.exclude_keywords and "hardware" in s.exclude_keywords, reply)
-    reply, updated, _ = handle_command("/ukljuci hardware", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/ukljuci hardware", s, roles, cities, excluded, narrow)
     check(updated is s and not any(x.casefold() == "hardware" for x in s.exclude_keywords), reply)
-    reply, _, action = handle_command("/poslovi", s, roles, cities, excluded)
+    reply, _, action = handle_command("/poslovi", s, roles, cities, excluded, narrow)
     check(action == "search" and "Tražim" in reply, reply)
-    reply, _, action = handle_command("/mjesec", s, roles, cities, excluded)
+    reply, _, action = handle_command("/mjesec", s, roles, cities, excluded, narrow)
     check(action == "search_month" and "30" in reply, reply)
-    reply, updated, _ = handle_command("/remote", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/remote", s, roles, cities, excluded, narrow)
     check(updated is None and "uključen" in reply, reply)
-    reply, updated, _ = handle_command("/remote off", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/remote off", s, roles, cities, excluded, narrow)
     check(updated is s and s.allow_remote is False and "isključeni" in reply, reply)
-    reply, updated, _ = handle_command("/bezremote", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/bezremote", s, roles, cities, excluded, narrow)
     check(s.allow_remote is False, reply)
-    reply, updated, _ = handle_command("/remote on", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/remote on", s, roles, cities, excluded, narrow)
     check(s.allow_remote is True and "uključeni" in reply, reply)
-    reply, updated, _ = handle_command("/reset", s, roles, cities, excluded)
+    reply, updated, _ = handle_command("/reset", s, roles, cities, excluded, narrow)
     check(s.role_keywords is None and s.onsite_cities is None and s.exclude_keywords is None, reply)
-    check(s.allow_remote is None, "reset remote")
+    check(s.allow_remote is None and s.narrow_mode is None and s.narrow_keywords is None, "reset remote")
+    reply, updated, _ = handle_command("/usko", s, roles, cities, excluded, narrow)
+    check(updated is None and "isključen" in reply, reply)
+    reply, updated, _ = handle_command("/usko on", s, roles, cities, excluded, narrow)
+    check(updated is s and s.narrow_mode is True, reply)
+    reply, updated, _ = handle_command("/usko dodaj motion designer", s, roles, cities, excluded, narrow)
+    check("motion designer" in s.narrow_keywords and "react" in s.narrow_keywords, reply)
+    reply, updated, _ = handle_command("/usko makni unity", s, roles, cities, excluded, narrow)
+    check(not any(x.casefold() == "unity" for x in s.narrow_keywords), reply)
+    reply, updated, _ = handle_command("/usko off", s, roles, cities, excluded, narrow)
+    check(s.narrow_mode is False and "širi" in reply, reply)
     text = format_settings_message(
         Settings(role_keywords=["qa"], onsite_cities=["Zadar"], exclude_keywords=["fpga"]),
-        roles, cities, excluded,
+        roles, cities, excluded, narrow,
     )
     parsed = parse_settings_text(text)
     check(parsed.role_keywords == ["qa"] and parsed.onsite_cities == ["Zadar"], text)
     check(parsed.exclude_keywords == ["fpga"], text)
-    off_text = format_settings_message(Settings(allow_remote=False), roles, cities, excluded)
+    off_text = format_settings_message(Settings(allow_remote=False), roles, cities, excluded, narrow)
     check(parse_settings_text(off_text).allow_remote is False, off_text)
     old_pin = 'JOBBOT_SETTINGS={"v":1,"role_keywords":null,"onsite_cities":null}'
     check(parse_settings_text(old_pin).allow_remote is None, "stari pin")
     check("Isključeno" in text, text)
     check(parse_settings_text("običan tekst") is None, "bez markera")
-    reply, updated, _ = handle_command("/start", Settings(), roles, cities, excluded)
+    reply, updated, _ = handle_command("/start", Settings(), roles, cities, excluded, narrow)
     check(updated is not None and "Bok" in reply, "start prikvači postavke")
-    reply, _, _ = handle_command("/nepostoji", s, roles, cities, excluded)
+    reply, _, _ = handle_command("/nepostoji", s, roles, cities, excluded, narrow)
     check("pomoc" in reply, reply)
 
 
@@ -134,6 +145,25 @@ def test_language_and_exclude():
         check(location_ok(remote_job), "remote on")
     finally:
         config.ALLOW_REMOTE = old
+
+    old_mode = config.NARROW_MODE
+    try:
+        config.NARROW_MODE = True
+        narrow_kept = [j.title for j in prefilter([
+            job("Junior React Developer", en, loc="Zagreb", remote=False, scope="hr"),
+            job("Junior Data Analyst", en, loc="Zagreb", remote=False, scope="hr"),
+            job("Senior React Developer", en, loc="Zagreb", remote=False, scope="hr"),
+            job("React Developer", en, loc="Split", remote=False, scope="hr"),
+            job("Hardware React Engineer", en, loc="Zagreb", remote=False, scope="hr"),
+        ])]
+        check(narrow_kept == ["Junior React Developer"], narrow_kept)
+        config.NARROW_MODE = False
+        broad = [j.title for j in prefilter([
+            job("Junior Data Analyst", en, loc="Zagreb", remote=False, scope="hr"),
+        ])]
+        check(broad == ["Junior Data Analyst"], broad)
+    finally:
+        config.NARROW_MODE = old_mode
 
 
 def test_webhook():
