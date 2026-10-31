@@ -6,7 +6,7 @@ Mala Python aplikacija koja **svaki dan u 12:00 (Europe/Zagreb)**:
    (programiranje, data/business/BI analitičar, QA i testiranje, IT i tehnička podrška, helpdesk,
    application support, technical/customer success engineer, junior DevOps ili sysadmin;
    i hrvatski termini: analitičar, podrška, tehnička podrška…) – **on-site/hybrid samo Zagreb i Zadar**,
-   **remote** ako je otvoren za Hrvatsku, susjedne zemlje ili Europu/EU/worldwide,
+   **remote** ako je otvoren bilo gdje u EU (ili Europe/worldwide) i ako je dovoljan engleski,
 2. makne duplikate i oglase koji su već poslani,
 3. (opcionalno) AI-jem (xAI Grok ili OpenAI) ocijeni oglase prema tvojim kriterijima i odabere 5–10 najboljih,
    s kratkim obrazloženjem na hrvatskom – bez API ključa koristi filter po ključnim riječima,
@@ -123,7 +123,7 @@ Kriterije mijenjaš u `JOB_CRITERIA`, npr.
 `Student 2. godine FER-a, Python ili data analyst, praksa ili studentski posao, remote ili Zagreb, bez iskustva`.
 Uloge za filter (ne AI tekst) mijenjaš s `ROLE_KEYWORDS=data analyst, qa, helpdesk, devops` – to **zamjenjuje** ugrađeni popis.
 
-**Lokacija.** On-site i hybrid samo u `ONSITE_CITIES` (zadano **Zagreb** i **Zadar**). Remote samo ako je otvoren za `REMOTE_REGIONS`: Hrvatska, Slovenija, BiH, Srbija, Crna Gora, Mađarska, Austrija, Italija, ili jasno Europa/EU/CET/worldwide. Remote samo za SAD, UK ili Njemačku otpada. Remote oglasi s MojPosla i Posao.hr računaju se. U poruci stoji `⭐ Zagreb`, `⭐ Zadar` (ili `· hibrid`) odnosno `🌍 Remote`. MojPosao dodatno traži te gradove po imenu. Posao.hr nema pouzdan RSS filter po gradu.
+**Lokacija.** On-site i hybrid samo u `ONSITE_CITIES` (zadano **Zagreb** i **Zadar**). Remote samo ako je otvoren kandidatima **bilo gdje u EU**, ili je Europe/worldwide/EMEA/CET koje EU uključuje (`REMOTE_REGIONS`). Oglas samo za Njemačku, Austriju ili SAD otpada. Uz to na remote oglasu **engleski mora biti dovoljan**: fraze poput `fluent German`, `Deutschkenntnisse`, `native Dutch` (`EXCLUDED_LANGUAGES`) i opis koji je pretežno na stranom jeziku (osim hrvatskog) izbacuju oglas. Hrvatski je u redu, pa remote s MojPosla i Posao.hr ostaje ako ne traži drugi jezik. U poruci stoji `⭐ Zagreb`, `⭐ Zadar` (ili `· hibrid`) odnosno `🌍 Remote`.
 
 ---
 
@@ -177,7 +177,8 @@ Isti ekran → kartica **Variables** → **New repository variable**. Ako varija
 | `JOB_CRITERIA` | ugrađeni tekst (početne tech uloge, remote ili Hrvatska, bez seniora) |
 | `ROLE_KEYWORDS` | ugrađeni popis uloga (vidi odjeljak 3) |
 | `ONSITE_CITIES` | `Zagreb, Zadar` (on-site/hybrid; u poruci ⭐) |
-| `REMOTE_REGIONS` | HR + susjedne zemlje + Europa/EU/CET/worldwide |
+| `REMOTE_REGIONS` | EU / Europe / worldwide (ne pojedina susjedna država) |
+| `EXCLUDED_LANGUAGES` | fraze poput `fluent German`, `Deutschkenntnisse` (prazno = ugrađeni popis) |
 | `MAX_RESULTS` | `8` |
 | `MAX_AGE_HOURS` | `48` (cache se računa kao trajna pohrana) |
 | `DISABLED_SOURCES` | ništa (npr. `himalayas,arbeitnow`) |
@@ -298,7 +299,8 @@ Troši više resursa od crona, pa je cron preporučen.
 | `JOB_CRITERIA` | Student bez iskustva, početne tech uloge, … | tekst kriterija za AI |
 | `ROLE_KEYWORDS` | ugrađeni popis | zarezom odvojene uloge; prazno = zadano. Senior i dalje ispada |
 | `ONSITE_CITIES` | `Zagreb, Zadar` | on-site i hybrid samo tu; prazno = zadano |
-| `REMOTE_REGIONS` | HR, susjedi, Europa/worldwide | remote mora pokriti barem jednu; prazno = zadano |
+| `REMOTE_REGIONS` | EU, Europe, worldwide, Hrvatska | remote otvoren bilo gdje u EU; prazno = zadano |
+| `EXCLUDED_LANGUAGES` | ugrađene fraze | zabranjeni jezik na remote oglasu; prazno = zadano |
 | `MAX_RESULTS` | `8` | max oglasa po danu |
 | `RUN_MODE` | `cron` | `cron` / `scheduler` |
 | `RUN_AT` | `12:00` | vrijeme za scheduler mod |

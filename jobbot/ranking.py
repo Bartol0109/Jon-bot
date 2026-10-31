@@ -49,6 +49,22 @@ def _terms_re(terms):
 
 
 REGION_RE = _terms_re(config.REMOTE_REGIONS)
+LANG_RE = _terms_re(config.EXCLUDED_LANGUAGES)
+
+# Česte riječi za grubu procjenu jezika opisa. Hrvatski i engleski prolaze.
+_LANG_STOPS = {
+    "en": {"the", "and", "for", "with", "you", "our", "your", "this", "that", "are", "will", "from", "have", "not", "can", "all"},
+    "hr": {"koji", "koja", "koje", "nije", "smo", "biti", "tražimo", "trazimo", "radno", "vrijeme", "mjesto", "iskustvo", "znanje", "prijave", "natječaj", "tvrtka", "pozicija", "kandidat"},
+    "de": {"und", "der", "die", "das", "ein", "eine", "mit", "für", "fur", "von", "sind", "wir", "nicht", "auch", "auf", "den", "dem", "sie", "eine", "zum", "zur"},
+    "fr": {"les", "des", "une", "pour", "dans", "avec", "vous", "nous", "sont", "qui", "que", "sur", "par", "pas", "plus", "votre", "cette", "aux"},
+    "nl": {"het", "een", "van", "voor", "met", "dat", "die", "niet", "zijn", "ook", "naar", "bij", "een", "wij", "ons"},
+    "it": {"che", "per", "con", "una", "sono", "della", "nel", "non", "come", "più", "piu", "anche", "questo", "siamo"},
+    "es": {"que", "los", "las", "del", "por", "con", "una", "para", "como", "está", "esta", "más", "mas", "con", "sus"},
+    "pl": {"się", "sie", "nie", "jest", "oraz", "dla", "pracy", "praca", "będzie", "bedzie", "nasz", "oferta"},
+    "sv": {"och", "att", "det", "som", "för", "for", "med", "den", "har", "inte", "till", "vi"},
+    "da": {"og", "det", "med", "for", "som", "til", "ikke", "vi", "den", "har", "på"},
+    "no": {"og", "det", "som", "til", "med", "for", "ikke", "den", "har", "vi", "på"},
+}
 
 
 def _city_re(city: str):
@@ -89,7 +105,40 @@ def remote_open(location: str) -> bool:
     return False
 
 
+def _word_tokens(text: str):
+    return re.findall(r"[^\W\d_]{3,}", (text or "").lower(), flags=re.UNICODE)
+
+
+def foreign_language(text: str):
+    """Vrati kod jezika ako je tekst pretežno strani (nije engleski ni hrvatski), inače None."""
+    words = _word_tokens(text)
+    if len(words) < 35:
+        return None
+    scores = {lang: sum(1 for w in words if w in stops) for lang, stops in _LANG_STOPS.items()}
+    if re.search(r"[čćžšđ]", text or "", re.I):
+        scores["hr"] = scores.get("hr", 0) + 6
+    en, hr = scores.get("en", 0), scores.get("hr", 0)
+    others = {k: v for k, v in scores.items() if k not in ("en", "hr")}
+    lang, best = max(others.items(), key=lambda kv: kv[1])
+    if best >= 6 and best > en and best > hr:
+        return lang
+    return None
+
+
+def english_sufficient(job: Job) -> bool:
+    """Remote: engleski mora biti dovoljan. Hrvatski opis je u redu. Traženi drugi jezik nije."""
+    blob = f"{job.title or ''}\n{job.location or ''}\n{job.description or ''}"
+    if LANG_RE.search(blob):
+        return False
+    if foreign_language(job.description or "") or foreign_language(job.title or ""):
+        return False
+    return True
+
+
 def location_ok(job: Job) -> bool:
+    # Engleski mora biti dovoljan. Hrvatski opis prolazi; njemački i ostali ne.
+    if not english_sufficient(job):
+        return False
     mode = work_mode(job)
     if mode in ("onsite", "hybrid"):
         return bool(matched_cities(job))
@@ -168,8 +217,9 @@ Ispod je JSON lista oglasa (id, naslov, tvrtka, lokacija, izvor, oznake, opis).
 Ocijeni svaki oglas 0-10 prema kriterijima. Kandidat je student BEZ iskustva: oglasi koji traže
 više godina iskustva ili senior/lead/manager razinu dobivaju nisku ocjenu. Prodaja, marketing i
 opća administracija dobivaju 0. On-site i hybrid samo u gradovima: {cities}.
-Remote samo ako je otvoren za: {regions}, ili za Europu/EU/CET/worldwide.
-Oglase ograničene samo na SAD, UK ili Njemačku odbaci.
+Remote samo ako je otvoren kandidatima bilo gdje u EU ili je Europe/worldwide (uključuje EU): {regions}.
+Engleski mora biti dovoljan. Hrvatski je u redu. Odbaci oglas koji traži njemački, francuski,
+nizozemski, talijanski, španjolski, poljski ili skandinavski jezik.
 Vrati najviše {limit} najboljih s ocjenom >= 6.
 
 Odgovori ISKLJUČIVO JSON-om oblika:
