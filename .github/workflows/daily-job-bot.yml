@@ -1,0 +1,178 @@
+# Jednom dnevno u 12:00 Europe/Zagreb, cijele godine.
+#
+# GitHub cron je UTC i run se zna odgoditi (posebno u :00). 12:00 u Zagrebu je
+# 10:00 UTC ljeti (CEST) ili 11:00 UTC zimi (CET). Raspored je zato svaki sat
+# od 9 do 16 UTC, u minuti :05:
+#   - 9 UTC je prije podneva u oba režima (nadoknada samo ako je cijeli dan propušten)
+#   - 10 UTC = podne ljeti, 11 UTC = podne zimi
+#   - 12–16 UTC hvataju odgodu ili neuspjeli run isti lokalni dan
+# Skripta .github/scripts/should_send.py pusti najviše jedno slanje po
+# zagrebačkom datumu. ONLY_AT_LOCAL_HOUR se namjerno ne postavlja: provjera
+# „točno 12 h“ bi odgođeni run preskočila i taj dan ne bi otišao.
+name: Dnevni job bot
+
+on:
+  schedule:
+    - cron: "5 9-16 * * *"
+  workflow_dispatch:
+    inputs:
+      mode:
+        description: "dry-run (samo log), test-message (testna poruka) ili send (pravo slanje)"
+        type: choice
+        required: true
+        default: dry-run
+        options:
+          - dry-run
+          - test-message
+          - send
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  guard-test:
+    name: Provjera rasporeda
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+      - name: Samoprovjera once-per-day guard
+        run: python .github/scripts/should_send.py --self-test
+
+      - name: Samoprovjera Telegram naredbi
+        run: |
+          pip install -r requirements.txt httpx
+          python -m jobbot.bot_selftest
+
+  run:
+    name: run
+    needs: guard-test
+    if: github.event_name != 'pull_request'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    concurrency:
+      group: dnevni-job-bot
+      cancel-in-progress: false
+    permissions:
+      contents: read
+      actions: write
+    env:
+      # Tajne: Settings → Secrets and variables → Actions → Secrets.
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      LLM_API_KEY: ${{ secrets.LLM_API_KEY }}
+      CALLMEBOT_PHONE: ${{ secrets.CALLMEBOT_PHONE }}
+      CALLMEBOT_APIKEY: ${{ secrets.CALLMEBOT_APIKEY }}
+      TWILIO_ACCOUNT_SID: ${{ secrets.TWILIO_ACCOUNT_SID }}
+      TWILIO_AUTH_TOKEN: ${{ secrets.TWILIO_AUTH_TOKEN }}
+      TWILIO_WHATSAPP_FROM: ${{ secrets.TWILIO_WHATSAPP_FROM }}
+      TWILIO_WHATSAPP_TO: ${{ secrets.TWILIO_WHATSAPP_TO }}
+      # Nisu tajne: Settings → Variables. Prazno = zadano u aplikaciji,
+      # osim SENDER-a (ovdje telegram, ne callmebot).
+      SENDER: ${{ vars.SENDER || 'telegram' }}
+      LLM_BASE_URL: ${{ vars.LLM_BASE_URL }}
+      LLM_MODEL: ${{ vars.LLM_MODEL }}
+      JOB_CRITERIA: ${{ vars.JOB_CRITERIA }}
+      ROLE_KEYWORDS: ${{ vars.ROLE_KEYWORDS }}
+      ONSITE_CITIES: ${{ vars.ONSITE_CITIES }}
+      REMOTE_REGIONS: ${{ vars.REMOTE_REGIONS }}
+      EXCLUDED_LANGUAGES: ${{ vars.EXCLUDED_LANGUAGES }}
+      MAX_RESULTS: ${{ vars.MAX_RESULTS }}
+      MAX_AGE_HOURS: ${{ vars.MAX_AGE_HOURS }}
+      DISABLED_SOURCES: ${{ vars.DISABLED_SOURCES }}
+      TZ_NAME: Europe/Zagreb
+      RUN_MODE: cron
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version-file: .python-version
+          cache: pip
+
+      - name: Instaliraj ovisnosti
+        run: pip install -r requirements.txt
+
+      - name: Učitaj postavke iz prikvačene Telegram poruke
+        run: python -m jobbot.sync_settings
+
+      # data/ je u .gitignore, a cache action zna preskočiti ignorirane
+      # datoteke. Stanje zato ide u RUNNER_TEMP: nije u gitu i nema tajni.
+      # runner kontekst nije dostupan u env cijelog joba, samo u koracima.
+      - name: Direktorij stanja
+        run: echo "DATA_DIR=${RUNNER_TEMP}/job-bot-data" >> "$GITHUB_ENV"
+
+      - name: Vrati stanje poslanih oglasa
+        uses: actions/cache/restore@v4
+        with:
+          path: ${{ runner.temp }}/job-bot-data
+          # Jedinstveni ključ se ne pogodi; restore-keys uzme zadnji seen-jobs-* zapis.
+          key: seen-jobs-${{ github.run_id }}-${{ github.run_attempt }}
+          restore-keys: |
+            seen-jobs-
+
+      - name: Odluči treba li slati
+        id: guard
+        if: github.event_name == 'schedule'
+        run: python .github/scripts/should_send.py
+
+      - name: Dry-run
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'dry-run'
+        run: python main.py --dry-run
+
+      - name: Testna poruka
+        if: github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'test-message'
+        run: python main.py --test-whatsapp
+
+      - name: Pošalji dnevne oglase
+        id: send
+        if: |
+          (github.event_name == 'schedule' && steps.guard.outputs.send == 'true') ||
+          (github.event_name == 'workflow_dispatch' && github.event.inputs.mode == 'send')
+        run: python main.py
+
+      - name: Zabilježi lokalni dan
+        id: stamp
+        if: steps.send.outcome == 'success'
+        env:
+          RECORD_DATE: ${{ steps.guard.outputs.record_date }}
+        run: python .github/scripts/should_send.py --stamp
+
+      - name: Spremi stanje poslanih oglasa
+        id: save-cache
+        if: steps.stamp.outcome == 'success'
+        uses: actions/cache/save@v4
+        with:
+          path: ${{ runner.temp }}/job-bot-data
+          key: seen-jobs-${{ github.run_id }}-${{ github.run_attempt }}
+
+      - name: Obriši stare cache zapise
+        if: steps.save-cache.outcome == 'success'
+        continue-on-error: true
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const keep = 'seen-jobs-${{ github.run_id }}-${{ github.run_attempt }}';
+            for (let i = 0; i < 20; i++) {
+              const { data } = await github.rest.actions.getActionsCacheList({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                key: 'seen-jobs-',
+                per_page: 100,
+                page: 1,
+              });
+              const stale = (data.actions_caches || []).filter((cache) => cache.key !== keep);
+              if (stale.length === 0) break;
+              for (const cache of stale) {
+                await github.rest.actions.deleteActionsCacheById({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  cache_id: cache.id,
+                });
+                core.info(`Obrisan stari cache ${cache.key}`);
+              }
+            }
