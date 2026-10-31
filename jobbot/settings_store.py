@@ -17,13 +17,19 @@ MARKER = "JOBBOT_SETTINGS="
 
 
 class Settings:
-    def __init__(self, role_keywords=None, onsite_cities=None):
-        # None = ugrađeno / env zadano. Lista = točno te vrijednosti.
+    def __init__(self, role_keywords=None, onsite_cities=None, exclude_keywords=None):
+        # None = ugrađeno / env zadano. Lista = točno te vrijednosti (i prazna).
         self.role_keywords = role_keywords
         self.onsite_cities = onsite_cities
+        self.exclude_keywords = exclude_keywords
 
     def to_dict(self):
-        return {"v": 1, "role_keywords": self.role_keywords, "onsite_cities": self.onsite_cities}
+        return {
+            "v": 1,
+            "role_keywords": self.role_keywords,
+            "onsite_cities": self.onsite_cities,
+            "exclude_keywords": self.exclude_keywords,
+        }
 
     def to_json(self):
         return json.dumps(self.to_dict(), ensure_ascii=False, separators=(",", ":"))
@@ -40,9 +46,11 @@ def parse_settings_text(text):
         return None
     roles = data.get("role_keywords")
     cities = data.get("onsite_cities")
+    excluded = data.get("exclude_keywords")
     return Settings(
         role_keywords=list(roles) if isinstance(roles, list) else None,
         onsite_cities=list(cities) if isinstance(cities, list) else None,
+        exclude_keywords=list(excluded) if isinstance(excluded, list) else None,
     )
 
 
@@ -58,15 +66,16 @@ def _preview(items, baseline, label):
     return f"{label}: {shown}{suffix}"
 
 
-def format_settings_message(settings, roles_baseline, cities_baseline):
+def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline):
     body = "\n".join([
         "⚙️ Postavke job bota",
         "Ova poruka je prikvačena. Ne briši je — dnevni pregled u 12:00 čita iste postavke.",
         "",
         _preview(settings.role_keywords, roles_baseline, "Uloge"),
         _preview(settings.onsite_cities, cities_baseline, "Gradovi (on-site/hybrid)"),
+        _preview(settings.exclude_keywords, exclude_baseline, "Isključeno iz naslova"),
         "",
-        "Remote: EU / Europe / worldwide, engleski dovoljan. Hrvatski je u redu.",
+        "Remote: EU / Europe / worldwide. Samo engleski ili hrvatski.",
         MARKER + settings.to_json(),
     ])
     return body[:4000]
@@ -102,10 +111,10 @@ class TelegramSettingsStore:
         parsed = parse_settings_text(_message_text(chat.get("pinned_message")))
         return parsed if parsed is not None else Settings()
 
-    def save(self, settings, roles_baseline, cities_baseline):
+    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline):
         if not config.TELEGRAM_CHAT_ID:
             raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
-        text = format_settings_message(settings, roles_baseline, cities_baseline)
+        text = format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline)
         chat = _api("getChat", {"chat_id": config.TELEGRAM_CHAT_ID}) or {}
         pinned = chat.get("pinned_message") or {}
         pinned_text = _message_text(pinned)

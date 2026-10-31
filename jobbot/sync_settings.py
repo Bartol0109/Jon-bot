@@ -18,6 +18,9 @@ def export_lines(settings):
         lines.append(("ROLE_KEYWORDS", ",".join(settings.role_keywords)))
     if settings.onsite_cities is not None:
         lines.append(("ONSITE_CITIES", ",".join(settings.onsite_cities)))
+    if settings.exclude_keywords is not None:
+        value = ",".join(settings.exclude_keywords) if settings.exclude_keywords else "__NONE__"
+        lines.append(("EXCLUDE_KEYWORDS", value))
     return lines
 
 

@@ -10,7 +10,7 @@ from fastapi import FastAPI, HTTPException, Request
 
 from jobbot import config
 from jobbot.bot_commands import handle_command
-from jobbot.runtime import ENV_CITIES, ENV_ROLES, apply
+from jobbot.runtime import ENV_CITIES, ENV_EXCLUDE, ENV_ROLES, apply
 from jobbot.set_webhook import set_webhook
 from jobbot.settings_store import TelegramSettingsStore
 
@@ -51,15 +51,24 @@ def _send_plain(text: str):
 def process_message(text: str):
     settings = _store.load()
     apply(settings)
-    reply, updated, action = handle_command(text, settings, ENV_ROLES, ENV_CITIES)
+    reply, updated, action = handle_command(text, settings, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE)
     if updated is not None:
-        _store.save(updated, ENV_ROLES, ENV_CITIES)
+        _store.save(updated, ENV_ROLES, ENV_CITIES, ENV_EXCLUDE)
         apply(updated)
     if reply:
         _send_plain(reply)
     if action == "search":
         from main import run_once
         run_once(sender_name="telegram", mark=False)
+    elif action == "search_month":
+        from main import run_once
+        run_once(
+            sender_name="telegram",
+            mark=False,
+            skip_seen=True,
+            max_age_hours=24 * 30,
+            empty_line="U zadnjih 30 dana nema oglasa koji prolaze filtre. Neki izvori objavljuju samo svježe oglase.",
+        )
 
 
 def _process_safe(text: str):

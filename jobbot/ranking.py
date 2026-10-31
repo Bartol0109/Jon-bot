@@ -31,10 +31,11 @@ ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
 
 def refresh_filters():
     """Ponovno složi uzorke nakon što naredba promijeni uloge ili gradove."""
-    global ROLE_RE, REGION_RE, LANG_RE
+    global ROLE_RE, REGION_RE, LANG_RE, EXCLUDE_RE
     ROLE_RE = _role_pattern(config.ROLE_KEYWORDS)
     REGION_RE = _terms_re(config.REMOTE_REGIONS)
     LANG_RE = _terms_re(config.EXCLUDED_LANGUAGES)
+    EXCLUDE_RE = _exclude_re(config.EXCLUDE_KEYWORDS)
 
 
 ENTRY = r"junior|\bjr\b|intern|internship|trainee|student|graduate|entry[- ]level|entry|apprentice|werkstudent|" \
@@ -54,12 +55,47 @@ _REMOTE_LABEL = re.compile(r"^(?:remote|work from home|wfh)\b[\s,.:;\-–—]*",
 
 
 def _terms_re(terms):
-    parts = [rf"\b{re.escape(t.strip())}\b" for t in terms if t and t.strip()]
+    """Fraze. Zagrade i kose crte (npr. (m/w/d)) ne ovise o granici riječi."""
+    parts = []
+    for raw in terms:
+        t = (raw or "").strip()
+        if not t:
+            continue
+        esc = re.escape(t)
+        if re.fullmatch(r"[\w][\w\s\-]*[\w]", t, flags=re.UNICODE):
+            parts.append(rf"(?<!\w){esc}(?!\w)")
+        else:
+            parts.append(esc)
     return re.compile("|".join(parts), re.I) if parts else re.compile(r"(?!)")
 
 
 REGION_RE = _terms_re(config.REMOTE_REGIONS)
 LANG_RE = _terms_re(config.EXCLUDED_LANGUAGES)
+
+
+def _exclude_re(terms):
+    """Naslov. 'elektro' i 'mehatronik' hvataju i elektrotehničar / mehatroničar."""
+    parts = []
+    prefixes = {"elektro", "mehatronik", "mechatronic"}
+    for raw in terms:
+        t = (raw or "").strip()
+        if not t:
+            continue
+        esc = re.escape(t)
+        if t.casefold() in prefixes:
+            parts.append(rf"(?<!\w){esc}")
+        elif re.fullmatch(r"[\w][\w\s/\-]*[\w]", t, flags=re.UNICODE):
+            parts.append(rf"(?<!\w){esc}(?!\w)")
+        else:
+            parts.append(esc)
+    return re.compile("|".join(parts), re.I) if parts else re.compile(r"(?!)")
+
+
+EXCLUDE_RE = _exclude_re(config.EXCLUDE_KEYWORDS)
+
+
+def title_excluded(job: Job) -> bool:
+    return bool(EXCLUDE_RE.search(job.title or ""))
 
 # Česte riječi za grubu procjenu jezika opisa. Hrvatski i engleski prolaze.
 _LANG_STOPS = {
@@ -120,27 +156,36 @@ def _word_tokens(text: str):
 
 
 def foreign_language(text: str):
-    """Vrati kod jezika ako je tekst pretežno strani (nije engleski ni hrvatski), inače None."""
+    """Vrati kod jezika ako je tekst pretežno strani (nije engleski ni hrvatski), inače None.
+
+    Prag je nizak: ako strani jezik vodi ispred engleskog i hrvatskog, oglas otpada.
+    """
     words = _word_tokens(text)
-    if len(words) < 35:
+    if len(words) < 10:
         return None
     scores = {lang: sum(1 for w in words if w in stops) for lang, stops in _LANG_STOPS.items()}
     if re.search(r"[čćžšđ]", text or "", re.I):
-        scores["hr"] = scores.get("hr", 0) + 6
+        scores["hr"] = scores.get("hr", 0) + 8
+    if len(re.findall(r"[äöüß]", text or "", flags=re.I)) >= 2:
+        scores["de"] = scores.get("de", 0) + 4
     en, hr = scores.get("en", 0), scores.get("hr", 0)
     others = {k: v for k, v in scores.items() if k not in ("en", "hr")}
     lang, best = max(others.items(), key=lambda kv: kv[1])
-    if best >= 6 and best > en and best > hr:
+    if best >= 4 and best > en and best > hr:
         return lang
     return None
 
 
+def posting_text(job: Job) -> str:
+    return f"{job.title or ''}\n{job.description or ''}"
+
+
 def english_sufficient(job: Job) -> bool:
-    """Remote: engleski mora biti dovoljan. Hrvatski opis je u redu. Traženi drugi jezik nije."""
-    blob = f"{job.title or ''}\n{job.location or ''}\n{job.description or ''}"
+    """Oglas mora biti na engleskom ili hrvatskom. Traženi drugi jezik nije dovoljan."""
+    blob = posting_text(job)
     if LANG_RE.search(blob):
         return False
-    if foreign_language(job.description or "") or foreign_language(job.title or ""):
+    if foreign_language(blob):
         return False
     return True
 
@@ -179,6 +224,8 @@ def prefilter(jobs):
         # Samo naslov: tagovi izvora (RemoteOK, RSS slug) su preširoki
         # ("testing", "devops" na cijelom feedu) i povuku poslove izvan uloge.
         if not ROLE_RE.search(j.title) or SENIOR_RE.search(j.title) or NOT_DEV_RE.search(j.title):
+            continue
+        if title_excluded(j):
             continue
         if not location_ok(j):
             continue
