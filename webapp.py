@@ -4,7 +4,9 @@ Odgovor 200 ide odmah. Pretraga (/poslovi) radi u pozadini jer Telegram ne čeka
 """
 import asyncio
 import logging
+import re
 import secrets
+import threading
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -21,6 +23,8 @@ app = FastAPI()
 _store = TelegramSettingsStore()
 _seen_updates = set()
 _tasks = set()
+_digest_lock = threading.Lock()
+_CRON_TOKEN = re.compile(r"^[A-Za-z0-9]{8,128}$")
 
 
 def _secret_ok(got: str) -> bool:
@@ -124,3 +128,53 @@ def _schedule(text: str):
     task = asyncio.create_task(asyncio.to_thread(_process_safe, text))
     _tasks.add(task)
     task.add_done_callback(_tasks.discard)
+
+
+def cron_token_ok(got: str) -> bool:
+    expected = config.CRON_SECRET or ""
+    if not _CRON_TOKEN.fullmatch(expected):
+        log.error("CRON_SECRET mora imati 8–128 znakova i samo slova i znamenke")
+        return False
+    if not got or not _CRON_TOKEN.fullmatch(got):
+        return False
+    return secrets.compare_digest(got, expected)
+
+
+def run_daily_digest():
+    if not _digest_lock.acquire(blocking=False):
+        log.info("Dnevni pregled već radi — preskačem")
+        return
+    try:
+        from jobbot.runtime import ENV_CITIES, ENV_EXCLUDE, ENV_NARROW, ENV_ROLES
+        from jobbot.seen_state import TelegramSeen, zagreb_today
+        settings = _store.load()
+        apply(settings)
+        seen = TelegramSeen(_store, (ENV_ROLES, ENV_CITIES, ENV_EXCLUDE, ENV_NARROW))
+        if seen.already_today():
+            log.info("Dnevni pregled za %s je već poslan", zagreb_today())
+            return
+        from main import run_once
+        run_once(sender_name="telegram", mark=True, store=seen)
+    except Exception as exc:  # noqa: BLE001
+        log.exception("Dnevni pregled nije uspio")
+        try:
+            _send_plain(f"Dnevni pregled nije uspio: {exc}"[:500])
+        except Exception:  # noqa: BLE001
+            log.exception("Ni poruka o grešci nije poslana")
+    finally:
+        _digest_lock.release()
+
+
+def _schedule_daily():
+    task = asyncio.create_task(asyncio.to_thread(run_daily_digest))
+    _tasks.add(task)
+    task.add_done_callback(_tasks.discard)
+
+
+@app.api_route("/cron/daily", methods=["GET", "POST"])
+async def cron_daily(request: Request, token: str = ""):
+    got = request.headers.get("x-cron-token") or token or ""
+    if not cron_token_ok(got):
+        raise HTTPException(status_code=401, detail="Krivi ili nedopušten CRON token")
+    _schedule_daily()
+    return {"ok": True}

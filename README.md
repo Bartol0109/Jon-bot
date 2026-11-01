@@ -127,25 +127,11 @@ Uloge za filter (ne AI tekst) mijenjaš s `ROLE_KEYWORDS=data analyst, qa, helpd
 
 ---
 
-## 4. Deploy na GitHub Actions (preporučeno)
+## 4. GitHub Actions (samo provjere, ne šalje u podne)
 
-Workflow `.github/workflows/daily-job-bot.yml` pokreće bota **jednom dnevno** u podne po `Europe/Zagreb`, ljeti i zimi. Zakazani runovi rade **samo na grani `main`**, nakon mergea. Pull request samo provjeri logiku rasporeda i ništa ne šalje.
+Dnevni pregled **više ne ide** preko GitHub Actions. Zakazani workflow je gasio se jer je `TELEGRAM_CHAT_ID` u GitHub Secrets bio kriv, a na Renderu je ispravan. Slanje u 12:00 radi Render + [cron-job.org](https://cron-job.org) (odjeljak 6).
 
-GitHubov cron je u **UTC-u** i run se zna odgoditi (često oko pune ure). 12:00 u Zagrebu je **10:00 UTC ljeti** (CEST) ili **11:00 UTC zimi** (CET). Zato raspored nije jedna UTC ura, nego:
-
-```cron
-5 9-16 * * *
-```
-
-svaki sat od 9 do 16 UTC, u minuti :05 (manje gužve nego u :00). Skripta `.github/scripts/should_send.py` odlučuje:
-
-- ako je lokalno **12:00 ili kasnije** i za **današnji zagrebački datum** još nije poslano → pošalji (odgoda do popodneva i dalje prođe; drugi run isti dan odmah izađe);
-- ako je **prije 12:00**, a cijeli prethodni dan je propušten → jedna nadoknada, zabilježena kao jučer, da današnje podne ipak ode;
-- inače prije podneva → preskoči.
-
-Ako slanje padne, datum se ne zabilježi pa sljedeći sat u tom prozoru pokuša opet. `ONLY_AT_LOCAL_HOUR` **nemoj** postavljati za Actions: ta provjera traži točno 12 h i odgođeni run bi preskočio cijeli dan. Workflow sam forsira `RUN_MODE=cron` i `TZ_NAME=Europe/Zagreb`.
-
-Već poslani oglasi (SQLite, isto što lokalno stoji u `data/seen_jobs.sqlite3`) i datum zadnjeg slanja drže se u **Actions cacheu** između runova. To nije commit i nema tajni. Na runneru su izvan git checkouta, jer je `data/` u `.gitignore`. GitHub cache obriše ako se ne dirne 7 dana ili ako se napuni kvota; svakodnevni run ga obnavlja. Ako cache nestane, bot može jednom ponoviti oglase iz zadnjih 48 h.
+Workflow i dalje može ručno (`workflow_dispatch`) i na pull requestu samo **provjerava** kod. Ne oslanjaj se na njega za poruku.
 
 ### 4.1 Secrets (tajne)
 
@@ -212,20 +198,7 @@ Prije prvog `send` / rasporeda najprije `test-message`, pa po želji `dry-run`.
 
 Zakazani run koji namjerno ništa ne pošalje ostaje zelen.
 
-### 4.5 60 dana bez aktivnosti
-
-U **javnom** repozitoriju GitHub **automatski ugasi zakazane workflowe** ako 60 dana nema aktivnosti na repou. Samo pokretanje Actions to ne produžuje. Ništa se ne briše; stanje workflowa postane `disabled_inactivity` i ne ide ni cron ni ručni run dok ga netko opet ne uključi.
-
-`.github/workflows/keepalive.yml` (**Održavanje rasporeda**) svaki ponedjeljak u 08:20 UTC napravi mali commit na `main` (`.github/keepalive-last.txt`, samo UTC vrijeme). To drži rok živim. Treba dozvola `contents: write` (već je u workflowu, preko `GITHUB_TOKEN`) i da zaštita grane ne blokira `github-actions[bot]`. Ručno: **Actions** → **Održavanje rasporeda** → **Run workflow** na `main`.
-
-Ako je GitHub već ugasio workflow, keepalive se sam ne može upaliti. Uključi oba:
-
-1. **Actions** → **Dnevni job bot** → **Enable workflow**.
-2. **Actions** → **Održavanje rasporeda** → **Enable workflow**.
-
-Isto radi `gh workflow enable "Dnevni job bot"` i `gh workflow enable "Održavanje rasporeda"`. Propušteni dani se ne nadoknađuju unazad osim kroz jutarnju nadoknadu iz odjeljka 4, i to samo ako je workflow uopće upaljen.
-
-Dnevni pregled prije slanja pročita **prikvačenu Telegram poruku** s postavkama (ako postoji). Zato `/dodaj` i `/grad` u chatu vrijede i za poruku u 12:00. Vidi odjeljak 5.
+Tjedni keepalive commit više nije potreban: nema zakazanog GitHub workflowa koji bi se ugasio nakon 60 dana.
 
 ---
 
@@ -235,7 +208,7 @@ Osim dnevnog pregleda na GitHub Actions, možeš pisati botu. To je mali web ser
 
 - Telegram šalje poruku na **webhook** (ulazni HTTPS zahtjev budi servis),
 - servis odmah vrati 200, a `/poslovi` traži oglase u pozadini,
-- postavke nisu na disku: bot ih drži u **prikvačenoj poruci** u tvom chatu (JSON red `JOBBOT_SETTINGS=…`). To ne košta i preživi restart. Dnevni GitHub Actions čita istu poruku. Poruku nemoj brisati ni otkvačivati. Ako je nema, vrijede ugrađeni filtri i Variables.
+- postavke nisu na disku: bot ih drži u **prikvačenoj poruci** u tvom chatu (JSON red `JOBBOT_SETTINGS=…`). U istoj poruci su i kratki hash već poslanih oglasa te datum zadnjeg dnevnog slanja (najviše 80). To ne košta i preživi restart. Poruku nemoj brisati ni otkvačivati. Ako je nema, vrijede ugrađeni filtri.
 
 Ručni `/poslovi` ne dijeli bazu već poslanih oglasa s Actions cacheom, pa se isti oglas može pojaviti i u jutarnjoj poruci.
 
@@ -272,6 +245,7 @@ Bot odgovara samo chatu iz `TELEGRAM_CHAT_ID`. Zahtjev mora imati zaglavlje `X-T
    - `TELEGRAM_BOT_TOKEN` — token od BotFathera
    - `TELEGRAM_CHAT_ID` — tvoj chat (vidi odjeljak 2.B)
    - `WEBHOOK_SECRET` — Blueprint ga sam generira; možeš ga ostaviti ili upisati svoj dugačak nasumičan niz
+   - `CRON_SECRET` — **sam ga upiši**. Samo slova i znamenke, 8 do 128 znakova, bez crtica, razmaka i simbola (npr. dugačak niz iz password generatora, samo A–Z, a–z i 0–9). Inače `/cron/daily` vraća 401.
    Ostalo (`SENDER=telegram`) već stoji u `render.yaml`. `LLM_API_KEY` je opcionalan ako želiš AI rangiranje i na ručnoj pretrazi.
 3. Pričekaj da deploy prođe. Prvi `GET /health` smije trajati dok se servis budi. URL je oblika `https://job-bot-xxxx.onrender.com`.
 4. Uključi webhook. U Renderu otvori **Shell** pokrenutog servisa i pokreni:
@@ -290,7 +264,31 @@ curl -X POST "$RENDER_URL/telegram/setup" -H "X-Setup-Token: $WEBHOOK_SECRET"
 5. U Telegramu otvori bota i pošalji `/start`. Trebao bi prikvačiti poruku s postavkama. Zatim `/postavke`, `/dodaj data analyst`, `/poslovi`.
 6. Ako je servis spavao, prva poruka može kasniti pola minute dok se Render budi. Sljedeće su brže. `/poslovi` nakon toga još traži oglase (desetak sekundi i više).
 
-Dnevni pregled i dalje ide s GitHub Actions u 12:00. Na Actions trebaju isti `TELEGRAM_BOT_TOKEN` i `TELEGRAM_CHAT_ID` (Secrets), inače se pin ne može pročitati i ostaju zadani filtri.
+Dnevni pregled u 12:00 ide preko cron-job.org na ovaj servis (odjeljak 6), ne preko GitHub Actions.
+
+---
+
+## 6. Dnevni pregled u 12:00 (cron-job.org)
+
+Render free nema vlastiti cron. [cron-job.org](https://cron-job.org) je besplatan i jednom dnevno probudi servis.
+
+Endpoint `GET` ili `POST` `/cron/daily` odmah vrati 200, a pregled odradi u pozadini. Isti filtri kao `/poslovi` (prikvačena poruka). Već poslani oglasi i datum zadnjeg slanja stoje u toj poruci. Ako je za današnji datum u Zagrebu već poslano, drugi poziv isti dan ne šalje opet.
+
+1. Otvori https://cron-job.org i napravi besplatan račun.
+2. **Cronjobs → Create cronjob**.
+3. **Title:** `Job bot podne`.
+4. **URL:**
+
+```text
+https://job-bot-61dh.onrender.com/cron/daily?token=TVOJ_CRON_SECRET
+```
+
+Zamijeni `TVOJ_CRON_SECRET` vrijednošću `CRON_SECRET` s Rendera (samo slova i znamenke). Može i zaglavlje `X-Cron-Token` umjesto `?token=`, ali cron-job.org najjednostavnije šalje URL.
+5. **Schedule:** every day at **12:00**. **Timezone:** `Europe/Zagreb` (ljetno i zimsko računanje cron-job.org rješava sam).
+6. **Request timeout:** stavi barem **60 sekundi**. Servis na Renderu zaspi; prvi zahtjev ga budi i može trajati oko pola minute dok uopće odgovori. Kad je budan, `/cron/daily` odmah vrati 200, a slanje oglasa ide dalje u pozadini.
+7. Spremi i uključi cronjob. Ručno **Run now** jednom da vidiš poruku u Telegramu. Drugi run isti zagrebački dan neće poslati duplikat.
+
+Ako Render log piše da `CRON_SECRET` nije valjan, u tajni ima znak koji nije slovo ni znamenka. Promijeni je i ažuriraj URL.
 
 ---
 

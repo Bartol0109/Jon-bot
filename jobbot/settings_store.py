@@ -6,6 +6,7 @@ GitHub Actions (isti bot token i chat id).
 """
 import json
 import logging
+import threading
 
 import requests
 
@@ -14,6 +15,7 @@ from . import config
 log = logging.getLogger(__name__)
 
 MARKER = "JOBBOT_SETTINGS="
+_write_lock = threading.Lock()
 
 
 class Settings:
@@ -27,6 +29,8 @@ class Settings:
         self.allow_remote = allow_remote
         self.narrow_mode = narrow_mode
         self.narrow_keywords = narrow_keywords
+        self.seen_date = None
+        self.seen_keys = []
 
     def to_dict(self):
         return {
@@ -37,6 +41,8 @@ class Settings:
             "allow_remote": self.allow_remote,
             "narrow_mode": self.narrow_mode,
             "narrow_keywords": self.narrow_keywords,
+            "seen_date": self.seen_date,
+            "seen": list(self.seen_keys or [])[-80:],
         }
 
     def to_json(self):
@@ -62,7 +68,7 @@ def parse_settings_text(text):
     if not isinstance(narrow_mode, bool):
         narrow_mode = None
     narrow = data.get("narrow_keywords")
-    return Settings(
+    settings = Settings(
         role_keywords=list(roles) if isinstance(roles, list) else None,
         onsite_cities=list(cities) if isinstance(cities, list) else None,
         exclude_keywords=list(excluded) if isinstance(excluded, list) else None,
@@ -70,6 +76,11 @@ def parse_settings_text(text):
         narrow_mode=narrow_mode,
         narrow_keywords=list(narrow) if isinstance(narrow, list) else None,
     )
+    seen = data.get("seen")
+    settings.seen_keys = [str(k) for k in seen][-80:] if isinstance(seen, list) else []
+    date = data.get("seen_date")
+    settings.seen_date = date if isinstance(date, str) and date else None
+    return settings
 
 
 def _preview(items, baseline, label):
@@ -113,9 +124,11 @@ def format_settings_message(settings, roles_baseline, cities_baseline, exclude_b
         _preview(settings.narrow_keywords, narrow_baseline, "Uski popis (naslov)"),
         "",
         "Kad je remote uključen: EU / Europe / worldwide, samo engleski ili hrvatski.",
-        MARKER + settings.to_json(),
     ])
-    return body[:4000]
+    json_line = MARKER + settings.to_json()
+    if len(body) + 1 + len(json_line) > 4000:
+        body = body[: 4000 - len(json_line) - 1]
+    return body + "\n" + json_line
 
 
 def _api(method, payload):
@@ -148,9 +161,7 @@ class TelegramSettingsStore:
         parsed = parse_settings_text(_message_text(chat.get("pinned_message")))
         return parsed if parsed is not None else Settings()
 
-    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
-        if not config.TELEGRAM_CHAT_ID:
-            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+    def _write(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
         text = format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
         chat = _api("getChat", {"chat_id": config.TELEGRAM_CHAT_ID}) or {}
         pinned = chat.get("pinned_message") or {}
@@ -177,3 +188,21 @@ class TelegramSettingsStore:
             "message_id": sent["message_id"],
             "disable_notification": True,
         })
+
+    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+        if not config.TELEGRAM_CHAT_ID:
+            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+        with _write_lock:
+            latest = self.load()
+            settings.seen_date = latest.seen_date
+            settings.seen_keys = list(latest.seen_keys or [])
+            self._write(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
+
+    def save_seen(self, date, keys, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+        if not config.TELEGRAM_CHAT_ID:
+            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+        with _write_lock:
+            latest = self.load()
+            latest.seen_date = date
+            latest.seen_keys = list(keys)[-80:]
+            self._write(latest, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
