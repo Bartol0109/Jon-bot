@@ -170,6 +170,8 @@ TELEGRAM_BOT_TOKEN = env("TELEGRAM_BOT_TOKEN")
 TELEGRAM_CHAT_ID = env("TELEGRAM_CHAT_ID")
 # Tajna u zaglavlju X-Telegram-Bot-Api-Secret-Token. Prazno = webhook odbija sve.
 WEBHOOK_SECRET = env("WEBHOOK_SECRET")
+# cron-job.org zove /cron/daily?token=... Samo slova i znamenke (8–128). Inače endpoint vraća 401.
+CRON_SECRET = env("CRON_SECRET")
 
 # Izvori koje želiš isključiti, npr. "himalayas,arbeitnow"
 DISABLED_SOURCES = {s.strip().lower() for s in env("DISABLED_SOURCES").split(",") if s.strip()}

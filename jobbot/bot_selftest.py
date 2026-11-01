@@ -3,6 +3,7 @@ import os
 import sys
 
 os.environ.setdefault("WEBHOOK_SECRET", "test-secret")
+os.environ.setdefault("CRON_SECRET", "cronSecret123")
 os.environ.setdefault("TELEGRAM_CHAT_ID", "42")
 os.environ.setdefault("TELEGRAM_BOT_TOKEN", "123:test")
 
@@ -166,6 +167,36 @@ def test_language_and_exclude():
         config.NARROW_MODE = old_mode
 
 
+def test_seen_and_cron():
+    from jobbot.seen_state import MAX_SEEN, SeenState, hash_job_key
+    state = SeenState()
+    state.mark([f"https://example.com/job/{i}" for i in range(MAX_SEEN + 15)], "2026-11-01")
+    check(len(state.keys) == MAX_SEEN, len(state.keys))
+    check(state.already_sent_on("2026-11-01"), "dan")
+    check(not state.already_sent_on("2026-11-02"), "sutra")
+    first = hash_job_key("https://example.com/job/0")
+    last = hash_job_key(f"https://example.com/job/{MAX_SEEN + 14}")
+    check(first not in state.keys and last in state.keys, "granica")
+    check(state.is_seen(f"https://example.com/job/{MAX_SEEN + 14}"), "zadnji")
+
+    calls = []
+    webapp._schedule_daily = lambda: calls.append("daily")
+    with TestClient(webapp.app) as client:
+        r = client.get("/cron/daily")
+        check(r.status_code == 401, r.text)
+        r = client.get("/cron/daily?token=not-the-secret")
+        check(r.status_code == 401, "krivi token")
+        r = client.get("/cron/daily?token=cronSecret123")
+        check(r.status_code == 200 and calls == ["daily"], r.text)
+        r = client.post("/cron/daily", headers={"x-cron-token": "cronSecret123"})
+        check(r.status_code == 200 and calls == ["daily", "daily"], calls)
+        old = webapp.config.CRON_SECRET
+        webapp.config.CRON_SECRET = "has-dash"
+        r = client.get("/cron/daily?token=has-dash")
+        check(r.status_code == 401, "crtica u tajni")
+        webapp.config.CRON_SECRET = old
+
+
 def test_webhook():
     calls = []
     webapp._schedule = calls.append
@@ -207,6 +238,7 @@ def test_github_env(path):
 def main():
     test_commands()
     test_language_and_exclude()
+    test_seen_and_cron()
     test_webhook()
     import tempfile
     with tempfile.TemporaryDirectory() as tmp:

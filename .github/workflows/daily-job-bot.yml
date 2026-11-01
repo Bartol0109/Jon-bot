@@ -1,19 +1,8 @@
-# Jednom dnevno u 12:00 Europe/Zagreb, cijele godine.
-#
-# GitHub cron je UTC i run se zna odgoditi (posebno u :00). 12:00 u Zagrebu je
-# 10:00 UTC ljeti (CEST) ili 11:00 UTC zimi (CET). Raspored je zato svaki sat
-# od 9 do 16 UTC, u minuti :05:
-#   - 9 UTC je prije podneva u oba režima (nadoknada samo ako je cijeli dan propušten)
-#   - 10 UTC = podne ljeti, 11 UTC = podne zimi
-#   - 12–16 UTC hvataju odgodu ili neuspjeli run isti lokalni dan
-# Skripta .github/scripts/should_send.py pusti najviše jedno slanje po
-# zagrebačkom datumu. ONLY_AT_LOCAL_HOUR se namjerno ne postavlja: provjera
-# „točno 12 h“ bi odgođeni run preskočila i taj dan ne bi otišao.
+# Dnevno slanje više nije ovdje. Render + cron-job.org zovu /cron/daily.
+# Ovaj workflow ostaje za provjere na pull requestu i ručni dry-run.
 name: Dnevni job bot
 
 on:
-  schedule:
-    - cron: "5 9-16 * * *"
   workflow_dispatch:
     inputs:
       mode:

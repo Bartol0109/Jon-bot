@@ -22,7 +22,7 @@ logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(mess
 log = logging.getLogger("job-bot")
 
 
-def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, skip_seen=False, empty_line=None):
+def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, skip_seen=False, empty_line=None, store=None):
     sender = get_sender(sender_name)
     if not dry_run:
         sender.check()
@@ -41,10 +41,12 @@ def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, ski
             seen_tc.add(tc)
     fresh = list(uniq.values())
     # 3) dedupe naspram već poslanih (ručni /mjesec to preskače)
-    store = None
     if not skip_seen:
-        store = Store()
+        if store is None:
+            store = Store()
         fresh = [j for j in fresh if not store.is_seen(j.key)]
+    else:
+        store = None
     log.info("Ukupno %d oglasa, svježih i neposlanih: %d (prozor %dh, trajna pohrana: %s)",
              len(jobs), len(fresh), hours, config.PERSISTENT)
 
