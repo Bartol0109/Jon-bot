@@ -43,7 +43,7 @@ def test_commands():
     reply, _, action = handle_command("/poslovi", s, roles, cities, excluded, narrow)
     check(action == "search" and "Tražim" in reply, reply)
     reply, _, action = handle_command("/mjesec", s, roles, cities, excluded, narrow)
-    check(action == "search_month" and "30" in reply, reply)
+    check(action == "search_month" and "30" in reply and "nisi dobio" in reply, reply)
     reply, updated, _ = handle_command("/remote", s, roles, cities, excluded, narrow)
     check(updated is None and "uključen" in reply, reply)
     reply, updated, _ = handle_command("/remote off", s, roles, cities, excluded, narrow)
@@ -168,16 +168,104 @@ def test_language_and_exclude():
 
 
 def test_seen_and_cron():
-    from jobbot.seen_state import MAX_SEEN, SeenState, hash_job_key
+    from datetime import date, timedelta
+
+    from jobbot.formatter import EMPTY_DIGEST, build_messages
+    from jobbot.models import Job
+    from jobbot.seen_state import (
+        MAX_BLOB,
+        SeenState,
+        canonical_url,
+        dedupe_jobs,
+        legacy_blob,
+        legacy_hash,
+        zagreb_today,
+    )
+
+    a = Job("remoteok", "Junior React Developer", "Acme Ltd",
+            "https://www.Example.com/jobs/1/?utm_source=x&utm_medium=email#apply")
+    b = Job("mojposao", "Junior React Developer (m/w/d)", "Acme d.o.o.", "https://example.com/jobs/1/")
+    c = Job("posao", "Junior React Developer", "Acme", "https://other.example/jobs/999?id=3")
+    d = Job("posao", "Senior React Developer", "Acme", "https://other.example/jobs/1000?id=4")
+    e = Job("board", "QA Analyst", "Beta", "https://board.example/job?id=1&utm_medium=email")
+    f = Job("board", "Support Analyst", "Beta", "https://board.example/job?id=2")
+    check(canonical_url(a.url) == canonical_url(b.url) == "https://example.com/jobs/1", canonical_url(a.url))
+    check(canonical_url(e.url) != canonical_url(f.url), "id u linku ostaje")
+    kept = dedupe_jobs([a, b, c, d, e, f])
+    check([j.title for j in kept] == [
+        "Junior React Developer", "Senior React Developer", "QA Analyst", "Support Analyst",
+    ], [j.title for j in kept])
+
     state = SeenState()
-    state.mark([f"https://example.com/job/{i}" for i in range(MAX_SEEN + 15)], "2026-11-01")
-    check(len(state.keys) == MAX_SEEN, len(state.keys))
+    state.mark_jobs([a], "2026-11-01", claim_day=True)
     check(state.already_sent_on("2026-11-01"), "dan")
     check(not state.already_sent_on("2026-11-02"), "sutra")
-    first = hash_job_key("https://example.com/job/0")
-    last = hash_job_key(f"https://example.com/job/{MAX_SEEN + 14}")
-    check(first not in state.keys and last in state.keys, "granica")
-    check(state.is_seen(f"https://example.com/job/{MAX_SEEN + 14}"), "zadnji")
+    check(state.seen_job(b) and state.seen_job(c), "isti oglas, drugi link ili izvor")
+    check(not state.seen_job(d) and not state.seen_job(e), "drugi oglas")
+    again = SeenState.unpack(state.pack())
+    again.date = state.date
+    check(again.seen_job(b) and again.already_sent_on("2026-11-01"), "pack")
+    state.mark_jobs([d], "2026-11-02", claim_day=False)
+    check(state.already_sent_on("2026-11-01") and state.seen_job(d), "ručni ne gasi dan")
+
+    today = date(2026, 11, 1)
+    aged = SeenState()
+    aged.mark_jobs([a], (today - timedelta(days=91)).isoformat(), claim_day=False, max_chars=10000)
+    aged.prune(today, 10000)
+    check(not aged.seen_job(a), "91 dan")
+    aged.mark_jobs([b], (today - timedelta(days=90)).isoformat(), claim_day=False, max_chars=10000)
+    aged.prune(today, 10000)
+    check(aged.seen_job(b), "90 dana")
+
+    many = [Job("s", f"Role {i}", f"Co {i}", f"https://jobs.example/p/{i}") for i in range(400)]
+    capped = SeenState()
+    capped.mark_jobs(many, "2026-11-01", claim_day=False, max_chars=2800)
+    check(len(capped.pack()) <= 2800, len(capped.pack()))
+    check(capped.seen_job(many[-1]) and not capped.seen_job(many[0]), "granica")
+    wide = SeenState()
+    wide.mark_jobs(many, zagreb_today(), claim_day=True, max_chars=MAX_BLOB)
+    check(len(wide.pack()) <= MAX_BLOB, len(wide.pack()))
+
+    old = legacy_blob([legacy_hash(a.key)], "2026-11-01")
+    legacy = SeenState.unpack(old)
+    check(legacy.seen_job(a), "stari pin")
+    raw = 'JOBBOT_SETTINGS={"v":1,"seen":["%s"],"seen_date":"2026-11-01"}' % legacy_hash(a.key)
+    parsed_old = parse_settings_text(raw)
+    check(parsed_old.seen_date == "2026-11-01", parsed_old.seen_date)
+    check(SeenState.unpack(parsed_old.seen_blob).seen_job(a), "stari json")
+
+    pinned = Settings(role_keywords=["qa"] * 30)
+    pinned.seen_date = zagreb_today()
+    pinned.seen_blob = wide.pack()
+    text = format_settings_message(pinned, ["developer"], ["Zagreb"], ["hardware"], ["react"])
+    check(len(text) <= 4000, len(text))
+    check(text.splitlines()[-1].startswith("JOBBOT_SETTINGS="), text[-80:])
+    parsed = parse_settings_text(text)
+    check(parsed.role_keywords == ["qa"] * 30 and parsed.seen_date == zagreb_today(), "postavke")
+    restored = SeenState.unpack(parsed.seen_blob)
+    check(restored.seen_job(many[-1]) and not restored.seen_job(many[0]), "poruka čuva najnovije")
+
+    class _Sender:
+        max_len = 1000
+
+        @staticmethod
+        def bold(s):
+            return s
+
+        @staticmethod
+        def esc(s):
+            return s
+
+    check(EMPTY_DIGEST in build_messages([], _Sender())[0], "prazan pregled")
+    check(EMPTY_DIGEST == "Danas nema novih oglasa koji odgovaraju tvojim kriterijima.", EMPTY_DIGEST)
+
+    import tempfile
+    from pathlib import Path
+    from jobbot.store import Store
+    with tempfile.TemporaryDirectory() as tmp:
+        db = Store(Path(tmp) / "seen.sqlite3")
+        db.mark([a])
+        check(db.covers(b) and db.covers(c) and not db.covers(d), "sqlite")
 
     calls = []
     webapp._schedule_daily = lambda: calls.append("daily")

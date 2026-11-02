@@ -11,6 +11,7 @@ import threading
 import requests
 
 from . import config
+from .seen_state import fit_seen_blob, legacy_blob, zagreb_today
 
 log = logging.getLogger(__name__)
 
@@ -30,7 +31,7 @@ class Settings:
         self.narrow_mode = narrow_mode
         self.narrow_keywords = narrow_keywords
         self.seen_date = None
-        self.seen_keys = []
+        self.seen_blob = ""
 
     def to_dict(self):
         return {
@@ -42,7 +43,7 @@ class Settings:
             "narrow_mode": self.narrow_mode,
             "narrow_keywords": self.narrow_keywords,
             "seen_date": self.seen_date,
-            "seen": list(self.seen_keys or [])[-80:],
+            "seen": self.seen_blob or "",
         }
 
     def to_json(self):
@@ -77,7 +78,12 @@ def parse_settings_text(text):
         narrow_keywords=list(narrow) if isinstance(narrow, list) else None,
     )
     seen = data.get("seen")
-    settings.seen_keys = [str(k) for k in seen][-80:] if isinstance(seen, list) else []
+    if isinstance(seen, list):
+        settings.seen_blob = legacy_blob(seen, zagreb_today())
+    elif isinstance(seen, str):
+        settings.seen_blob = seen
+    else:
+        settings.seen_blob = ""
     date = data.get("seen_date")
     settings.seen_date = date if isinstance(date, str) and date else None
     return settings
@@ -112,6 +118,11 @@ def _narrow_line(settings):
 
 
 def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+    blob = settings.seen_blob or ""
+    settings.seen_blob = ""
+    bare = len(MARKER) + len(settings.to_json())
+    room = 4000 - bare - 1
+    settings.seen_blob = fit_seen_blob(blob, max(0, room), zagreb_today())
     body = "\n".join([
         "⚙️ Postavke job bota",
         "Ova poruka je prikvačena. Ne briši je — dnevni pregled u 12:00 čita iste postavke.",
@@ -126,8 +137,14 @@ def format_settings_message(settings, roles_baseline, cities_baseline, exclude_b
         "Kad je remote uključen: EU / Europe / worldwide, samo engleski ili hrvatski.",
     ])
     json_line = MARKER + settings.to_json()
-    if len(body) + 1 + len(json_line) > 4000:
-        body = body[: 4000 - len(json_line) - 1]
+    if len(json_line) > 4000:
+        settings.seen_blob = ""
+        json_line = MARKER + settings.to_json()
+    budget = 4000 - len(json_line) - 1
+    if budget < 0:
+        budget = 0
+    if len(body) > budget:
+        body = body[:budget]
     return body + "\n" + json_line
 
 
@@ -195,14 +212,14 @@ class TelegramSettingsStore:
         with _write_lock:
             latest = self.load()
             settings.seen_date = latest.seen_date
-            settings.seen_keys = list(latest.seen_keys or [])
+            settings.seen_blob = latest.seen_blob or ""
             self._write(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
 
-    def save_seen(self, date, keys, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+    def save_seen(self, date, blob, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
         if not config.TELEGRAM_CHAT_ID:
             raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
         with _write_lock:
             latest = self.load()
             latest.seen_date = date
-            latest.seen_keys = list(keys)[-80:]
+            latest.seen_blob = blob or ""
             self._write(latest, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)

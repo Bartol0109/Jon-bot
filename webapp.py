@@ -63,16 +63,21 @@ def process_message(text: str):
         _send_plain(reply)
     if action == "search":
         from main import run_once
-        run_once(sender_name="telegram", mark=False)
+        run_once(sender_name="telegram", mark=True, store=_manual_seen())
     elif action == "search_month":
         from main import run_once
         run_once(
             sender_name="telegram",
-            mark=False,
-            skip_seen=True,
+            mark=True,
+            store=_manual_seen(),
             max_age_hours=24 * 30,
-            empty_line="U zadnjih 30 dana nema oglasa koji prolaze filtre. Neki izvori objavljuju samo svježe oglase.",
+            empty_line="U zadnjih 30 dana nema novih oglasa koji odgovaraju tvojim kriterijima.",
         )
+
+
+def _manual_seen():
+    from jobbot.seen_state import TelegramSeen
+    return TelegramSeen(_store, (ENV_ROLES, ENV_CITIES, ENV_EXCLUDE, ENV_NARROW), claim_day=False)
 
 
 def _process_safe(text: str):

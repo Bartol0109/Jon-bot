@@ -204,21 +204,21 @@ Tjedni keepalive commit više nije potreban: nema zakazanog GitHub workflowa koj
 
 ## 5. Telegram naredbe na Renderu (besplatno)
 
-Osim dnevnog pregleda na GitHub Actions, možeš pisati botu. To je mali web servis (`webapp.py`) na [Render](https://render.com) **free** planu. Besplatni web servis zaspi nakon otprilike 15 minuta tišine i nema stalni disk ni background worker. Zato:
+Osim dnevnog pregleda u podne, možeš pisati botu. To je mali web servis (`webapp.py`) na [Render](https://render.com) **free** planu. Besplatni web servis zaspi nakon otprilike 15 minuta tišine i nema stalni disk ni background worker. Zato:
 
 - Telegram šalje poruku na **webhook** (ulazni HTTPS zahtjev budi servis),
 - servis odmah vrati 200, a `/poslovi` traži oglase u pozadini,
-- postavke nisu na disku: bot ih drži u **prikvačenoj poruci** u tvom chatu (JSON red `JOBBOT_SETTINGS=…`). U istoj poruci su i kratki hash već poslanih oglasa te datum zadnjeg dnevnog slanja (najviše 80). To ne košta i preživi restart. Poruku nemoj brisati ni otkvačivati. Ako je nema, vrijede ugrađeni filtri.
+- postavke nisu na disku: bot ih drži u **prikvačenoj poruci** u tvom chatu (JSON red `JOBBOT_SETTINGS=…`). U istoj poruci je i popis već poslanih oglasa te datum zadnjeg dnevnog slanja. To ne košta i preživi restart. Poruku nemoj brisati ni otkvačivati. Ako je nema, vrijede ugrađeni filtri.
 
-Ručni `/poslovi` ne dijeli bazu već poslanih oglasa s Actions cacheom, pa se isti oglas može pojaviti i u jutarnjoj poruci.
+Svaki pregled (dnevni, `/poslovi` i `/mjesec`) šalje samo oglase koje još nisi dobio. Isti oglas s drugog izvora, s `www` u linku ili s parametrima za praćenje (`utm_…`) broji se kao već poslan. Zapis se čuva 90 dana. Ako prikvačena poruka ne može stati u Telegramov limit, izbacuju se najstariji zapisi, pa se vrlo star oglas može vratiti tek tada. Ako nakon filtera nema ničeg novog, stigne kratka poruka: „Danas nema novih oglasa koji odgovaraju tvojim kriterijima.“ Ručni `/poslovi` ne gasi podnevni pregled — u podne opet stignu samo oglasi koji do tada nisu poslani.
 
 ### 5.1 Naredbe
 
 | Naredba | Što radi |
 |---|---|
 | `/start`, `/pomoc` | pomoć |
-| `/poslovi` | odmah potraži svježe oglase i pošalji |
-| `/mjesec` | zadnjih 30 dana, bez preskakanja već poslanih; neki izvori daju samo novije oglase |
+| `/poslovi` | odmah potraži svježe oglase i pošalji samo one koje još nisi dobio |
+| `/mjesec` | zadnjih 30 dana, samo oglasi koje još nisi dobio; neki izvori daju samo novije oglase |
 | `/postavke` | pokaži uloge i gradove |
 | `/dodaj data analyst` | dodaj ulogu |
 | `/makni data analyst` | makni ulogu |
@@ -272,7 +272,7 @@ Dnevni pregled u 12:00 ide preko cron-job.org na ovaj servis (odjeljak 6), ne pr
 
 Render free nema vlastiti cron. [cron-job.org](https://cron-job.org) je besplatan i jednom dnevno probudi servis.
 
-Endpoint `GET` ili `POST` `/cron/daily` odmah vrati 200, a pregled odradi u pozadini. Isti filtri kao `/poslovi` (prikvačena poruka). Već poslani oglasi i datum zadnjeg slanja stoje u toj poruci. Ako je za današnji datum u Zagrebu već poslano, drugi poziv isti dan ne šalje opet.
+Endpoint `GET` ili `POST` `/cron/daily` odmah vrati 200, a pregled odradi u pozadini. Isti filtri kao `/poslovi` (prikvačena poruka). Šalju se samo oglasi koji još nisu poslani. Ako nema novih, stigne kratka poruka da danas nema novih oglasa. Datum zadnjeg slanja stoji u prikvačenoj poruci: drugi poziv isti zagrebački dan ne šalje opet.
 
 1. Otvori https://cron-job.org i napravi besplatan račun.
 2. **Cronjobs → Create cronjob**.

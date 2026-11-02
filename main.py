@@ -16,6 +16,7 @@ from jobbot.formatter import build_messages
 from jobbot.ranking import rank
 from jobbot.senders import get_sender
 from jobbot.sources import collect
+from jobbot.seen_state import dedupe_jobs
 from jobbot.store import Store
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(message)s", stream=sys.stdout)
@@ -32,19 +33,13 @@ def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, ski
     hours = config.MAX_AGE_HOURS if max_age_hours is None else max_age_hours
     cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
     fresh = [j for j in jobs if j.posted is None or j.posted >= cutoff]
-    # 2) dedupe unutar runa
-    uniq, seen_tc = {}, set()
-    for j in fresh:
-        tc = (j.title.lower().strip(), j.company.lower().strip())
-        if j.key not in uniq and tc not in seen_tc:
-            uniq[j.key] = j
-            seen_tc.add(tc)
-    fresh = list(uniq.values())
-    # 3) dedupe naspram već poslanih (ručni /mjesec to preskače)
+    # 2) isti oglas iz više izvora, ili isti link s drugim parametrima, ostaje jednom
+    fresh = dedupe_jobs(fresh)
+    # 3) preskoči oglase koji su već poslani
     if not skip_seen:
         if store is None:
             store = Store()
-        fresh = [j for j in fresh if not store.is_seen(j.key)]
+        fresh = [j for j in fresh if not _already_sent(store, j)]
     else:
         store = None
     log.info("Ukupno %d oglasa, svježih i neposlanih: %d (prozor %dh, trajna pohrana: %s)",
@@ -66,6 +61,13 @@ def run_once(dry_run=False, sender_name=None, mark=True, max_age_hours=None, ski
     if mark and store is not None:
         store.mark(picked)
     log.info("Gotovo: poslano %d oglasa u %d poruka.", len(picked), len(messages))
+
+
+def _already_sent(store, job):
+    covers = getattr(store, "covers", None)
+    if covers is not None:
+        return covers(job)
+    return store.is_seen(job.key)
 
 
 def scheduler(dry_run=False, sender_name=None):
