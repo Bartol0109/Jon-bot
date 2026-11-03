@@ -6,14 +6,17 @@ GitHub Actions (isti bot token i chat id).
 """
 import json
 import logging
+import threading
 
 import requests
 
 from . import config
+from .seen_state import fit_seen_blob, legacy_blob, zagreb_today
 
 log = logging.getLogger(__name__)
 
 MARKER = "JOBBOT_SETTINGS="
+_write_lock = threading.Lock()
 
 
 class Settings:
@@ -27,6 +30,8 @@ class Settings:
         self.allow_remote = allow_remote
         self.narrow_mode = narrow_mode
         self.narrow_keywords = narrow_keywords
+        self.seen_date = None
+        self.seen_blob = ""
 
     def to_dict(self):
         return {
@@ -37,6 +42,8 @@ class Settings:
             "allow_remote": self.allow_remote,
             "narrow_mode": self.narrow_mode,
             "narrow_keywords": self.narrow_keywords,
+            "seen_date": self.seen_date,
+            "seen": self.seen_blob or "",
         }
 
     def to_json(self):
@@ -62,7 +69,7 @@ def parse_settings_text(text):
     if not isinstance(narrow_mode, bool):
         narrow_mode = None
     narrow = data.get("narrow_keywords")
-    return Settings(
+    settings = Settings(
         role_keywords=list(roles) if isinstance(roles, list) else None,
         onsite_cities=list(cities) if isinstance(cities, list) else None,
         exclude_keywords=list(excluded) if isinstance(excluded, list) else None,
@@ -70,6 +77,16 @@ def parse_settings_text(text):
         narrow_mode=narrow_mode,
         narrow_keywords=list(narrow) if isinstance(narrow, list) else None,
     )
+    seen = data.get("seen")
+    if isinstance(seen, list):
+        settings.seen_blob = legacy_blob(seen, zagreb_today())
+    elif isinstance(seen, str):
+        settings.seen_blob = seen
+    else:
+        settings.seen_blob = ""
+    date = data.get("seen_date")
+    settings.seen_date = date if isinstance(date, str) and date else None
+    return settings
 
 
 def _preview(items, baseline, label):
@@ -101,6 +118,11 @@ def _narrow_line(settings):
 
 
 def format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+    blob = settings.seen_blob or ""
+    settings.seen_blob = ""
+    bare = len(MARKER) + len(settings.to_json())
+    room = 4000 - bare - 1
+    settings.seen_blob = fit_seen_blob(blob, max(0, room), zagreb_today())
     body = "\n".join([
         "⚙️ Postavke job bota",
         "Ova poruka je prikvačena. Ne briši je — dnevni pregled u 12:00 čita iste postavke.",
@@ -113,9 +135,17 @@ def format_settings_message(settings, roles_baseline, cities_baseline, exclude_b
         _preview(settings.narrow_keywords, narrow_baseline, "Uski popis (naslov)"),
         "",
         "Kad je remote uključen: EU / Europe / worldwide, samo engleski ili hrvatski.",
-        MARKER + settings.to_json(),
     ])
-    return body[:4000]
+    json_line = MARKER + settings.to_json()
+    if len(json_line) > 4000:
+        settings.seen_blob = ""
+        json_line = MARKER + settings.to_json()
+    budget = 4000 - len(json_line) - 1
+    if budget < 0:
+        budget = 0
+    if len(body) > budget:
+        body = body[:budget]
+    return body + "\n" + json_line
 
 
 def _api(method, payload):
@@ -148,9 +178,7 @@ class TelegramSettingsStore:
         parsed = parse_settings_text(_message_text(chat.get("pinned_message")))
         return parsed if parsed is not None else Settings()
 
-    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
-        if not config.TELEGRAM_CHAT_ID:
-            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+    def _write(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
         text = format_settings_message(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
         chat = _api("getChat", {"chat_id": config.TELEGRAM_CHAT_ID}) or {}
         pinned = chat.get("pinned_message") or {}
@@ -177,3 +205,21 @@ class TelegramSettingsStore:
             "message_id": sent["message_id"],
             "disable_notification": True,
         })
+
+    def save(self, settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+        if not config.TELEGRAM_CHAT_ID:
+            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+        with _write_lock:
+            latest = self.load()
+            settings.seen_date = latest.seen_date
+            settings.seen_blob = latest.seen_blob or ""
+            self._write(settings, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
+
+    def save_seen(self, date, blob, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline):
+        if not config.TELEGRAM_CHAT_ID:
+            raise RuntimeError("Nedostaje TELEGRAM_CHAT_ID")
+        with _write_lock:
+            latest = self.load()
+            latest.seen_date = date
+            latest.seen_blob = blob or ""
+            self._write(latest, roles_baseline, cities_baseline, exclude_baseline, narrow_baseline)
