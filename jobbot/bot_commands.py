@@ -3,8 +3,8 @@ HELP = """\
 Bok. Šaljem početne tech oglase.
 
 /pomoc — ove naredbe
-/poslovi — odmah potraži svježe oglase i pošalji ih
-/mjesec — oglasi iz zadnjih 30 dana (već poslani se ne preskaču)
+/poslovi — odmah potraži svježe oglase i pošalji samo one koje još nisi dobio
+/mjesec — zadnjih 30 dana, samo oglasi koje još nisi dobio
 /postavke — pokaži filtre
 /dodaj riječ — dodaj ulogu, npr. /dodaj data analyst
 /makni riječ — makni ulogu
@@ -24,7 +24,7 @@ Bok. Šaljem početne tech oglase.
 
 Šaljem samo oglase na engleskom ili hrvatskom. On-site i hybrid samo u gradovima s popisa. Remote: otvoren za EU ili svijet.
 Postavke su u prikvačenoj poruci. Ne briši je. Dnevni pregled u 12:00 čita iste postavke.
-Ručna pretraga ne dijeli popis već poslanih oglasa s dnevnim pregledom, pa se neki oglas može pojaviti i ujutro.
+Već poslan oglas ne šaljem ponovno, ni u podne ni na /poslovi i /mjesec.
 """
 
 
@@ -151,7 +151,7 @@ def handle_command(text, settings, roles_baseline, cities_baseline, exclude_base
         return "Tražim svježe oglase. Može potrajati minutu.", None, "search"
     if cmd == "/mjesec":
         return (
-            "Tražim oglase iz zadnjih 30 dana. Već poslane ne preskačem. "
+            "Tražim oglase iz zadnjih 30 dana koje još nisi dobio. "
             "Neki izvori daju samo novije oglase, pa stariji mogu nedostajati. Može potrajati minutu.",
             None,
             "search_month",

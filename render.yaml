@@ -22,3 +22,5 @@ services:
         sync: false
       - key: WEBHOOK_SECRET
         generateValue: true
+      - key: CRON_SECRET
+        sync: false

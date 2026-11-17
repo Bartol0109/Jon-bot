@@ -21,7 +21,24 @@ class Store:
     def is_seen(self, key):
         return self.db.execute("SELECT 1 FROM seen WHERE key=?", (key,)).fetchone() is not None
 
+    def covers(self, job):
+        from .seen_state import fingerprints
+        keys = list(fingerprints(job))
+        key = getattr(job, "key", None)
+        if key:
+            keys.append(key)
+        if not keys:
+            return False
+        marks = ",".join("?" * len(keys))
+        return self.db.execute(f"SELECT 1 FROM seen WHERE key IN ({marks}) LIMIT 1", keys).fetchone() is not None
+
     def mark(self, jobs):
+        from .seen_state import fingerprints
         now = datetime.now(timezone.utc).isoformat()
-        self.db.executemany("INSERT OR IGNORE INTO seen VALUES (?,?,?)", [(j.key, j.title, now) for j in jobs])
+        rows = []
+        for job in jobs:
+            rows.append((job.key, job.title, now))
+            for fp in fingerprints(job):
+                rows.append((fp, job.title, now))
+        self.db.executemany("INSERT OR IGNORE INTO seen VALUES (?,?,?)", rows)
         self.db.commit()
